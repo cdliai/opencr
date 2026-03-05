@@ -1,5 +1,5 @@
 FROM vllm/vllm-openai:latest
-ENTRYPOINT ["python", "-m", "vllm.entrypoints.openai.api_server"]
+ENTRYPOINT ["python3", "-m", "vllm.entrypoints.openai.api_server"]
 CMD [ \
     "--model", "deepseek-ai/DeepSeek-OCR", \
     "--trust-remote-code", \
