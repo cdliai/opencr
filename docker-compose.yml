@@ -1,0 +1,44 @@
+version: "3.8"
+
+services:
+  ocr-model:
+    build: ./ocr-model
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - HF_HOME=/root/.cache/huggingface
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+    ports:
+      - "39671:39671"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:39671/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  ocr-pipeline:
+    build: ./ocr_pipeline
+    ports:
+      - "39672:39672"
+    volumes:
+      - ./input:/data/input
+      - ./output:/data/output
+    environment:
+      - MODEL_SERVER_URL=http://ocr-model:39671
+      - INPUT_DIR=/data/input
+      - OUTPUT_DIR=/data/output
+    depends_on:
+      ocr-model:
+        condition: service_healthy
+
+volumes:
+  hf-cache:
