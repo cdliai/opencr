@@ -19,6 +19,8 @@ async def health_check():
         model_server_url=settings.model_server_url,
         model_name=settings.model_name,
         model_status=model_readiness.status,
+        input_dir=str(settings.input_dir),
+        output_dir=str(settings.output_dir),
     )
     if not model_readiness.ready:
         return JSONResponse(content=resp.model_dump(), status_code=503)

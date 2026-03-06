@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     # Extraction defaults
     default_dpi: int = 200
     arabic_dpi: int = 300
-    max_tokens: int = 8192
+    max_tokens: int = 4096
     temperature: float = 0.0
 
     # Retry settings

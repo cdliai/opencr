@@ -1,10 +1,13 @@
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from ocr_pipeline.config import settings
-from ocr_pipeline.routers import health, extract, jobs
+from ocr_pipeline.routers import health, extract, jobs, ui
 from ocr_pipeline.services.startup import wait_for_model_server
 
 logging.basicConfig(
@@ -46,6 +49,17 @@ app = FastAPI(
 app.include_router(health.router)
 app.include_router(extract.router)
 app.include_router(jobs.router)
+app.include_router(ui.router)
+
+_static_dir = Path(__file__).parent / "static"
+if _static_dir.is_dir():
+    app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
+
+
+@app.get("/", include_in_schema=False)
+async def serve_index():
+    index = _static_dir / "index.html"
+    return FileResponse(str(index))
 
 
 if __name__ == "__main__":

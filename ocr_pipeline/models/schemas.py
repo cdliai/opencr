@@ -46,3 +46,21 @@ class HealthResponse(BaseModel):
     model_server_url: str
     model_name: str
     model_status: str  # "ready" | "waiting (reason)"
+    input_dir: str = ""
+    output_dir: str = ""
+
+
+class FileInfo(BaseModel):
+    """Input file info."""
+    name: str
+    size: int
+    modified: float
+    path: str
+
+
+class OutputFileInfo(BaseModel):
+    """Output file pair info."""
+    stem: str
+    md_size: int
+    meta_exists: bool
+    modified: float

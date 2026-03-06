@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenCR</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <script src="/static/js/api.js"></script>
+  <script src="/static/js/sse.js"></script>
+  <script src="/static/js/app.js"></script>
+</head>
+<body>
+
+<div id="app" x-data="opencrApp()" x-init="init()">
+
+  <!-- Header -->
+  <header class="header">
+    <div class="header-left">
+      <h1 class="logo">OpenCR</h1>
+      <span class="version" x-text="'v' + version"></span>
+    </div>
+    <div class="header-right">
+      <span class="health-dot" :class="healthClass" :title="healthStatus"></span>
+      <span class="health-label" x-text="healthStatus"></span>
+    </div>
+  </header>
+
+  <!-- Tabs -->
+  <nav class="tabs">
+    <button class="tab" :class="{ active: tab === 'upload' }" @click="tab = 'upload'">
+      Upload &amp; Extract
+    </button>
+    <button class="tab" :class="{ active: tab === 'progress' }" @click="tab = 'progress'">
+      Progress
+      <span class="badge" x-show="activeJobId" x-text="progressPercent + '%'"></span>
+    </button>
+    <button class="tab" :class="{ active: tab === 'results' }" @click="tab = 'results'">
+      Results
+      <span class="badge" x-show="outputFiles.length" x-text="outputFiles.length"></span>
+    </button>
+  </nav>
+
+  <!-- Toast container -->
+  <div class="toast-container">
+    <template x-for="(t, i) in toasts" :key="i">
+      <div class="toast" :class="t.type" x-text="t.message"
+           x-transition x-init="setTimeout(() => toasts.splice(i, 1), 4000)"></div>
+    </template>
+  </div>
+
+  <!-- Tab: Upload & Extract -->
+  <main class="content" x-show="tab === 'upload'">
+
+    <!-- Drop zone -->
+    <div class="drop-zone"
+         :class="{ 'drag-over': dragOver }"
+         @dragover.prevent="dragOver = true"
+         @dragleave.prevent="dragOver = false"
+         @drop.prevent="handleDrop($event)"
+         @click="$refs.fileInput.click()">
+      <input type="file" accept=".pdf" multiple x-ref="fileInput" hidden @change="handleFileSelect($event)">
+      <div class="drop-zone-content">
+        <svg class="drop-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M12 16V4m0 0L8 8m4-4l4 4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/>
+        </svg>
+        <p class="drop-text">Drop PDFs here or click to browse</p>
+        <p class="drop-hint" x-show="uploadProgress !== null" x-text="'Uploading... ' + uploadProgress + '%'"></p>
+      </div>
+    </div>
+
+    <!-- Input file list -->
+    <div class="section">
+      <div class="section-header">
+        <h2>Input Files</h2>
+        <button class="btn btn-sm" @click="refreshInputFiles">Refresh</button>
+      </div>
+
+      <div class="empty-state" x-show="inputFiles.length === 0">
+        <p>No PDF files in input directory</p>
+      </div>
+
+      <div class="file-list" x-show="inputFiles.length > 0">
+        <label class="file-item select-all">
+          <input type="checkbox" @change="toggleSelectAll($event)" :checked="allSelected">
+          <span>Select all (<span x-text="inputFiles.length"></span> files)</span>
+        </label>
+        <template x-for="f in inputFiles" :key="f.name">
+          <label class="file-item">
+            <input type="checkbox" :value="f.path" x-model="selectedFiles">
+            <span class="file-name" x-text="f.name"></span>
+            <span class="file-size" x-text="formatSize(f.size)"></span>
+          </label>
+        </template>
+      </div>
+
+      <button class="btn btn-primary"
+              :disabled="selectedFiles.length === 0 || extracting"
+              @click="startExtraction">
+        <span x-show="!extracting">Start Extraction (<span x-text="selectedFiles.length"></span> files)</span>
+        <span x-show="extracting">Starting...</span>
+      </button>
+    </div>
+  </main>
+
+  <!-- Tab: Progress -->
+  <main class="content" x-show="tab === 'progress'">
+
+    <div class="empty-state" x-show="!activeJobId && events.length === 0">
+      <p>No active extraction job</p>
+      <p class="hint">Start an extraction from the Upload tab</p>
+    </div>
+
+    <template x-if="activeJobId">
+      <div>
+        <!-- Overall progress -->
+        <div class="progress-header">
+          <span>Job <code x-text="activeJobId"></code></span>
+          <span x-text="jobStatus"></span>
+        </div>
+        <div class="progress-bar-track">
+          <div class="progress-bar-fill" :style="'width:' + progressPercent + '%'"></div>
+        </div>
+        <div class="progress-stats">
+          <span x-text="docsCompleted + '/' + docsTotal + ' documents'"></span>
+          <span x-text="progressPercent + '%'"></span>
+        </div>
+
+        <!-- Current document progress -->
+        <div class="current-doc" x-show="currentDoc">
+          <span x-text="currentDoc"></span>
+          <span x-show="currentPage">
+            page <span x-text="currentPage"></span>/<span x-text="currentTotalPages"></span>
+          </span>
+        </div>
+      </div>
+    </template>
+
+    <!-- Event log -->
+    <div class="event-log" x-show="events.length > 0">
+      <h3>Event Log</h3>
+      <div class="log-entries" x-ref="logEntries">
+        <template x-for="(e, i) in events" :key="i">
+          <div class="log-entry" :class="'type-' + e.type">
+            <span class="log-time" x-text="e.time"></span>
+            <span class="log-type" x-text="e.type"></span>
+            <span class="log-detail" x-text="e.detail"></span>
+          </div>
+        </template>
+      </div>
+    </div>
+  </main>
+
+  <!-- Tab: Results -->
+  <main class="content" x-show="tab === 'results'">
+
+    <div class="section-header">
+      <h2>Extraction Results</h2>
+      <button class="btn btn-sm" @click="refreshOutputFiles">Refresh</button>
+    </div>
+
+    <div class="empty-state" x-show="outputFiles.length === 0">
+      <p>No extraction results yet</p>
+    </div>
+
+    <div class="results-layout" x-show="outputFiles.length > 0">
+      <!-- File list sidebar -->
+      <div class="results-list">
+        <template x-for="f in outputFiles" :key="f.stem">
+          <div class="result-item" :class="{ active: viewingStem === f.stem }" @click="viewResult(f.stem)">
+            <span class="file-name" x-text="f.stem"></span>
+            <span class="file-size" x-text="formatSize(f.md_size)"></span>
+          </div>
+        </template>
+      </div>
+
+      <!-- Content viewer -->
+      <div class="result-viewer" x-show="viewingStem">
+        <div class="viewer-header">
+          <h3 x-text="viewingStem + '.md'"></h3>
+          <div class="viewer-actions">
+            <button class="btn btn-sm" @click="downloadResult(viewingStem)">Download .md</button>
+            <button class="btn btn-sm" x-show="viewingMeta" @click="showMeta = !showMeta">
+              <span x-text="showMeta ? 'Show Content' : 'Show Metadata'"></span>
+            </button>
+          </div>
+        </div>
+        <div class="viewer-body">
+          <pre x-show="!showMeta" class="md-content" x-text="viewingContent"></pre>
+          <pre x-show="showMeta" class="meta-content" x-text="JSON.stringify(viewingMeta, null, 2)"></pre>
+        </div>
+      </div>
+    </div>
+  </main>
+
+</div>
+
+</body>
+</html>
