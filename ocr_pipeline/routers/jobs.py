@@ -57,7 +57,10 @@ async def run_job(job_id: str, request: JobRequest):
                 await queue.put(error_event)
             continue
 
-        processor = BatchProcessor(event_callback=event_callback)
+        processor = BatchProcessor(
+            event_callback=event_callback,
+            strip_refs=request.strip_refs,
+        )
         doc_meta = await processor.process_document(pdf_path, output_dir)
 
         completed_docs += 1

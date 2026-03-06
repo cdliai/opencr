@@ -27,17 +27,39 @@ class TextCleaner:
         re.compile(r"\x00"),            # Null bytes
     ]
 
-    def clean(self, text: str) -> str:
+    # <|ref|>text<|/ref|>[[x, y, w, h]] — model reference blocks with bounding boxes
+    _REF_BLOCK_RE = re.compile(
+        r"<\|ref\|>(.*?)<\|/ref\|>\[\[[\d\s,]+\]\]",
+        re.DOTALL,
+    )
+
+    # End-of-line soft hyphens: "word-\n" or "word- \n" followed by continuation
+    _HYPHEN_RE = re.compile(r"(\w)- ?\n(\w)")
+
+    def clean(self, text: str, strip_refs: bool = False) -> str:
         """Full cleaning pipeline."""
         if not text:
             return ""
 
         text = self._normalize_unicode(text)
+        if strip_refs:
+            text = self._strip_ref_blocks(text)
         text = self._strip_model_tokens(text)
         text = self._strip_artifacts(text)
+        text = self._rejoin_hyphens(text)
         text = self._normalize_whitespace(text)
         text = self._fix_common_ocr_issues(text)
         return text.strip()
+
+    def _strip_ref_blocks(self, text: str) -> str:
+        """Remove <|ref|>...<|/ref|>[[bbox]] blocks, keeping the inner text."""
+        return self._REF_BLOCK_RE.sub(r"\1", text)
+
+    def _rejoin_hyphens(self, text: str) -> str:
+        """Rejoin words split across lines by soft hyphens.
+        'kesin-\\nlikle' → 'kesinlikle'
+        """
+        return self._HYPHEN_RE.sub(r"\1\2", text)
 
     def _normalize_unicode(self, text: str) -> str:
         """NFC normalization — combines decomposed characters.

@@ -156,6 +156,22 @@ input[type="checkbox"] {
   cursor: pointer;
 }
 
+/* === Extract Options === */
+.extract-options {
+  margin-bottom: 12px;
+}
+.option-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.option-hint {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+}
+
 /* === Buttons === */
 .btn {
   padding: 8px 16px;

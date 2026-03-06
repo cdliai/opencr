@@ -70,11 +70,11 @@ const API = {
     return `/api/files/output/${encodeURIComponent(stem)}/download`;
   },
 
-  async createJob(filePaths) {
+  async createJob(filePaths, { stripRefs = false } = {}) {
     const res = await fetch('/api/jobs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ file_paths: filePaths }),
+      body: JSON.stringify({ file_paths: filePaths, strip_refs: stripRefs }),
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));

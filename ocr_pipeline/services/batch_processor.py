@@ -21,7 +21,7 @@ class BatchProcessor:
     validation, script detection, metadata collection, and progress events.
     """
 
-    def __init__(self, event_callback=None):
+    def __init__(self, event_callback=None, strip_refs: bool = False):
         self.ocr_engine = OCREngine()
         self.renderer = PDFRenderer()
         self.analyzer = PageAnalyzer()
@@ -31,6 +31,7 @@ class BatchProcessor:
         self.metadata_collector = MetadataCollector(model_name=settings.model_name)
         self.writer = OutputWriter()
         self.event_callback = event_callback
+        self.strip_refs = strip_refs
 
     async def _emit(self, event: dict):
         if self.event_callback:
@@ -69,7 +70,7 @@ class BatchProcessor:
                 ngram_size=strategy["ngram_size"],
                 window_size=strategy["window_size"],
             )
-            text = self.cleaner.clean(text)
+            text = self.cleaner.clean(text, strip_refs=self.strip_refs)
             result = self.validator.validate(text, page_num)
 
             if result.status in (ValidationStatus.PASS, ValidationStatus.WARN):

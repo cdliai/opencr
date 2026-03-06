@@ -25,6 +25,7 @@ class JobRequest(BaseModel):
     """Batch extraction job request."""
     file_paths: list[str] = Field(description="List of PDF file paths to process")
     output_dir: Optional[str] = Field(None, description="Output directory override")
+    strip_refs: bool = Field(False, description="Strip model reference blocks (bounding boxes) from output")
 
 
 class JobStatusResponse(BaseModel):

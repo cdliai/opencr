@@ -16,6 +16,9 @@ function opencrApp() {
     inputFiles: [],
     selectedFiles: [],
 
+    // Options
+    stripRefs: false,
+
     // Extraction
     extracting: false,
     activeJobId: null,
@@ -143,7 +146,7 @@ function opencrApp() {
       this.events = [];
 
       try {
-        const data = await API.createJob(this.selectedFiles);
+        const data = await API.createJob(this.selectedFiles, { stripRefs: this.stripRefs });
         this.activeJobId = data.job_id;
         this.jobStatus = 'processing';
         this.progressPercent = 0;

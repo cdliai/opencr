@@ -94,6 +94,14 @@
         </template>
       </div>
 
+      <div class="extract-options">
+        <label class="option-toggle">
+          <input type="checkbox" x-model="stripRefs">
+          <span>Strip reference blocks</span>
+          <span class="option-hint">(remove bounding-box annotations from output)</span>
+        </label>
+      </div>
+
       <button class="btn btn-primary"
               :disabled="selectedFiles.length === 0 || extracting"
               @click="startExtraction">
