@@ -123,6 +123,7 @@
         </div>
         <div class="progress-stats">
           <span x-text="docsCompleted + '/' + docsTotal + ' documents'"></span>
+          <span x-text="pagesCompleted + ' pages completed'"></span>
           <span x-text="progressPercent + '%'"></span>
         </div>
 
@@ -130,7 +131,7 @@
         <div class="current-doc" x-show="currentDoc">
           <span x-text="currentDoc"></span>
           <span x-show="currentPage">
-            page <span x-text="currentPage"></span>/<span x-text="currentTotalPages"></span>
+            — page <span x-text="currentPage"></span>/<span x-text="currentTotalPages"></span>
           </span>
         </div>
       </div>

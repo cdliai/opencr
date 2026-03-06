@@ -23,9 +23,13 @@ function opencrApp() {
     progressPercent: 0,
     docsCompleted: 0,
     docsTotal: 0,
+    pagesCompleted: 0,
+    totalPagesKnown: 0,
+    _docPages: {},       // {docName: totalPages} — learned from page_start events
     currentDoc: '',
     currentPage: null,
     currentTotalPages: null,
+    completedStems: [],  // stems finished this job, for auto-download
     events: [],
 
     // Results
@@ -145,6 +149,10 @@ function opencrApp() {
         this.progressPercent = 0;
         this.docsCompleted = 0;
         this.docsTotal = this.selectedFiles.length;
+        this.pagesCompleted = 0;
+        this.totalPagesKnown = 0;
+        this._docPages = {};
+        this.completedStems = [];
         this.currentDoc = '';
         this.currentPage = null;
         this.currentTotalPages = null;
@@ -176,11 +184,18 @@ function opencrApp() {
           this.currentDoc = event.document || '';
           this.currentPage = event.page;
           this.currentTotalPages = event.total_pages;
+          // Register this document's page count (first time we see it)
+          if (event.document && event.total_pages && !this._docPages[event.document]) {
+            this._docPages[event.document] = event.total_pages;
+            this.totalPagesKnown = Object.values(this._docPages).reduce((a, b) => a + b, 0);
+          }
           detail = `${event.document} p${event.page}/${event.total_pages}`;
           break;
 
         case 'page_complete':
-          detail = `${event.document || ''} p${event.page || ''} - ${event.verdict || ''}`;
+          this.pagesCompleted++;
+          this._updatePageProgress();
+          detail = `${event.document || ''} p${event.page || ''} - ${event.validation_status || ''}`;
           if (event.processing_time_ms) {
             detail += ` (${Math.round(event.processing_time_ms)}ms)`;
           }
@@ -190,26 +205,33 @@ function opencrApp() {
           detail = `${event.document || ''} p${event.page || ''} retry #${event.attempt || ''}`;
           break;
 
-        case 'document_complete':
+        case 'document_complete': {
           this.docsCompleted++;
-          this.progressPercent = Math.round((this.docsCompleted / this.docsTotal) * 100);
-          detail = `${event.document || event.filename || ''} done`;
+          // Extract stem from document filename for auto-download
+          const docName = event.document || '';
+          const stem = docName.replace(/\.pdf$/i, '');
+          if (stem) this.completedStems.push(stem);
+          this._updatePageProgress();
+          detail = `${docName} done`;
           break;
+        }
 
         case 'document_error':
           detail = `${event.document || ''}: ${event.error || 'unknown error'}`;
           break;
 
-        case 'job_complete':
+        case 'job_complete': {
           this.jobStatus = 'completed';
           this.progressPercent = 100;
           this.currentDoc = '';
           this.currentPage = null;
           const s = event.summary || {};
           detail = `${event.total_documents} docs, ${event.total_pages} pages (pass:${s.pass} warn:${s.warn} fail:${s.fail})`;
-          this.toast('Extraction complete!', 'success');
+          this.toast('Extraction complete! Downloading results...', 'success');
           this.refreshOutputFiles();
+          this._autoDownloadResults();
           break;
+        }
 
         default:
           detail = JSON.stringify(event);
@@ -221,6 +243,35 @@ function opencrApp() {
       this.$nextTick(() => {
         const el = this.$refs.logEntries;
         if (el) el.scrollTop = el.scrollHeight;
+      });
+    },
+
+    _updatePageProgress() {
+      if (this.totalPagesKnown > 0) {
+        // We know some/all page counts — use page-level progress
+        // For docs we haven't seen yet, estimate based on average pages per known doc
+        const knownDocs = Object.keys(this._docPages).length;
+        const unknownDocs = Math.max(0, this.docsTotal - knownDocs);
+        const avgPages = this.totalPagesKnown / Math.max(1, knownDocs);
+        const estimatedTotal = this.totalPagesKnown + (unknownDocs * avgPages);
+        this.progressPercent = Math.min(99, Math.round((this.pagesCompleted / estimatedTotal) * 100));
+      } else {
+        // Fallback: document-level progress
+        this.progressPercent = Math.round((this.docsCompleted / Math.max(1, this.docsTotal)) * 100);
+      }
+    },
+
+    _autoDownloadResults() {
+      // Trigger browser download for each completed file, staggered to avoid popup blockers
+      this.completedStems.forEach((stem, i) => {
+        setTimeout(() => {
+          const a = document.createElement('a');
+          a.href = API.downloadUrl(stem);
+          a.download = stem + '.md';
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+        }, i * 500);
       });
     },
 
