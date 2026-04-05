@@ -210,7 +210,6 @@ def wrap_with_direction(text: str, analysis: ScriptAnalysis) -> str:
     if analysis.direction == ScriptDirection.RTL:
         return f'<div dir="rtl">\n\n{text}\n\n</div>'
     elif analysis.direction == ScriptDirection.MIXED:
-        # Process block-by-block
         blocks = text.split("\n\n")
         detector = ScriptDetector()
         wrapped = []
