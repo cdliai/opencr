@@ -8,7 +8,8 @@ services:
     volumes:
       - hf-cache:/root/.cache/huggingface
     ports:
-      - "39671:39671"
+      - "127.0.0.1:39671:39671"
+      - "100.120.58.95:39671"
     deploy:
       resources:
         reservations:
@@ -17,7 +18,13 @@ services:
               count: 1
               capabilities: [gpu]
     healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:39671/health')"]
+      test:
+        [
+          "CMD",
+          "python3",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:39671/health')",
+        ]
       interval: 30s
       timeout: 10s
       retries: 10
@@ -26,7 +33,7 @@ services:
   ocr-pipeline:
     build: ./ocr_pipeline
     ports:
-      - "39672:39672"
+      - "127.0.0.1:39672:39672"
     volumes:
       - ./input:/data/input
       - ./output:/data/output

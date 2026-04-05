@@ -23,7 +23,7 @@ class PageMetadata:
     token_count_approx: int  # word_count * 1.3 rough estimate
 
     # Script analysis
-    script_direction: str  # "ltr" | "rtl" | "mixed"
+    script_direction: str  # "ltr"::left-to-right | "rtl"::right-to-left | "mixed"
     primary_script: str  # "latin" | "arabic" | "latin_extended"
     detected_languages: list[str]
     ltr_ratio: float

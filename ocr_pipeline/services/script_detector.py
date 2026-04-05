@@ -156,7 +156,6 @@ class ScriptDetector:
         else:
             primary_script = ScriptFamily.UNDETERMINED
 
-        # Language hints
         detected_languages: list[str] = []
         if has_turkish:
             detected_languages.append("tr")  # Modern Turkish
