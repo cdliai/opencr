@@ -196,8 +196,8 @@ class BatchProcessor:
         script_counts: dict[str, int] = {}
         for m in pages_metadata:
             script_counts[m.primary_script] = script_counts.get(m.primary_script, 0) + 1
-        dominant_script = max(script_counts, key=lambda k: direction_counts.get(k, 0))
-        
+        dominant_script = max(script_counts, key=lambda k: script_counts[k])
+
 
         all_langs: set[str] = set()
         for m in pages_metadata:
