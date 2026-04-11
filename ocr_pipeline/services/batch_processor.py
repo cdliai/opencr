@@ -191,12 +191,13 @@ class BatchProcessor:
         pages_mixed = sum(1 for m in pages_metadata if m.script_direction == ScriptDirection.MIXED.value)
 
         direction_counts = {"ltr": pages_ltr, "rtl": pages_rtl, "mixed": pages_mixed}
-        dominant_direction = max(direction_counts, key=direction_counts.get)
+        dominant_direction = max(direction_counts, key=lambda k: direction_counts[k])
 
         script_counts: dict[str, int] = {}
         for m in pages_metadata:
             script_counts[m.primary_script] = script_counts.get(m.primary_script, 0) + 1
-        dominant_script = max(script_counts, key=script_counts.get) if script_counts else "undetermined"
+        dominant_script = max(script_counts, key=lambda k: direction_counts.get(k, 0))
+        
 
         all_langs: set[str] = set()
         for m in pages_metadata:
