@@ -7,12 +7,12 @@ const API = {
     return res.json();
   },
 
-  /**
-   * Upload a PDF file with progress tracking.
-   * @param {File} file
-   * @param {function} onProgress - Called with 0-100
-   * @returns {Promise<object>}
-   */
+  async metricsSummary() {
+    const res = await fetch('/api/metrics/summary');
+    if (!res.ok) throw new Error('Failed to load metrics summary');
+    return res.json();
+  },
+
   upload(file, onProgress) {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
@@ -54,6 +54,24 @@ const API = {
     return res.json();
   },
 
+  async listDatasetFiles() {
+    const res = await fetch('/api/files/datasets');
+    if (!res.ok) throw new Error('Failed to list dataset bundles');
+    return res.json();
+  },
+
+  async getOutputRawTxt(stem) {
+    const res = await fetch(`/api/files/output/${encodeURIComponent(stem)}.raw.txt`);
+    if (!res.ok) throw new Error('Failed to load raw text');
+    return res.text();
+  },
+
+  async getOutputTxt(stem) {
+    const res = await fetch(`/api/files/output/${encodeURIComponent(stem)}.txt`);
+    if (!res.ok) throw new Error('Failed to load clean text');
+    return res.text();
+  },
+
   async getOutputMd(stem) {
     const res = await fetch(`/api/files/output/${encodeURIComponent(stem)}.md`);
     if (!res.ok) throw new Error('Failed to load markdown');
@@ -62,19 +80,27 @@ const API = {
 
   async getOutputMeta(stem) {
     const res = await fetch(`/api/files/output/${encodeURIComponent(stem)}.meta.json`);
-    if (!res.ok) return null;
+    if (!res.ok) throw new Error('Failed to load metadata');
     return res.json();
   },
 
-  downloadUrl(stem) {
-    return `/api/files/output/${encodeURIComponent(stem)}/download`;
+  artifactDownloadUrl(stem, artifact) {
+    return `/api/files/output/${encodeURIComponent(stem)}/download/${encodeURIComponent(artifact)}`;
   },
 
-  async createJob(filePaths, { stripRefs = false } = {}) {
+  datasetDownloadUrl(name) {
+    return `/api/files/datasets/${encodeURIComponent(name)}/download`;
+  },
+
+  async createJob(filePaths, { stripRefs = false, exportParquet = false } = {}) {
     const res = await fetch('/api/jobs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ file_paths: filePaths, strip_refs: stripRefs }),
+      body: JSON.stringify({
+        file_paths: filePaths,
+        strip_refs: stripRefs,
+        export_parquet: exportParquet,
+      }),
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
