@@ -5,19 +5,13 @@ from ocr_pipeline.config import settings
 from ocr_pipeline.services.startup import model_readiness
 
 
-def test_ui_routes_expose_document_and_dataset_artifacts(tmp_path, monkeypatch):
+def test_upload_and_list_input(tmp_path, monkeypatch):
     input_dir = tmp_path / "input"
     output_dir = tmp_path / "output"
-    datasets_dir = output_dir / "datasets"
+    runs_dir = output_dir / "runs"
+    db_path = output_dir / "opencr.sqlite"
     input_dir.mkdir()
-    datasets_dir.mkdir(parents=True)
-
-    (input_dir / "sample.pdf").write_bytes(b"%PDF-1.4\n")
-    (output_dir / "sample.raw.txt").write_text("raw text", encoding="utf-8")
-    (output_dir / "sample.txt").write_text("clean text", encoding="utf-8")
-    (output_dir / "sample.md").write_text("# markdown", encoding="utf-8")
-    (output_dir / "sample.meta.json").write_text('{"ok": true}', encoding="utf-8")
-    (datasets_dir / "job-123.zip").write_bytes(b"zip-data")
+    output_dir.mkdir()
 
     async def fake_wait_for_model_server():
         model_readiness.ready = True
@@ -26,27 +20,42 @@ def test_ui_routes_expose_document_and_dataset_artifacts(tmp_path, monkeypatch):
 
     monkeypatch.setattr(settings, "input_dir", input_dir)
     monkeypatch.setattr(settings, "output_dir", output_dir)
+    monkeypatch.setattr(settings, "runs_dir", runs_dir)
+    monkeypatch.setattr(settings, "db_path", db_path)
     monkeypatch.setattr(main_module, "wait_for_model_server", fake_wait_for_model_server)
     model_readiness.ready = True
     model_readiness.error = None
 
     with TestClient(main_module.app) as client:
-        outputs = client.get("/api/files/output")
-        assert outputs.status_code == 200
-        payload = outputs.json()
-        assert payload[0]["raw_txt_exists"] is True
-        assert payload[0]["txt_exists"] is True
-        assert payload[0]["md_exists"] is True
-        assert payload[0]["meta_exists"] is True
+        files = {"file": ("sample.pdf", b"%PDF-1.4\n", "application/pdf")}
+        resp = client.post("/api/upload", files=files)
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["filename"] == "sample.pdf"
+        assert payload["size"] > 0
 
-        raw = client.get("/api/files/output/sample.raw.txt")
-        assert raw.status_code == 200
-        assert raw.text == "raw text"
+        listing = client.get("/api/files/input")
+        assert listing.status_code == 200
+        items = listing.json()
+        assert any(item["name"] == "sample.pdf" for item in items)
 
-        datasets = client.get("/api/files/datasets")
-        assert datasets.status_code == 200
-        assert datasets.json()[0]["name"] == "job-123.zip"
 
-        download = client.get("/api/files/datasets/job-123.zip/download")
-        assert download.status_code == 200
-        assert download.content == b"zip-data"
+def test_runs_list_empty_when_no_runs(tmp_path, monkeypatch):
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+
+    async def fake_wait_for_model_server():
+        model_readiness.ready = True
+        return True
+
+    monkeypatch.setattr(settings, "input_dir", tmp_path / "input")
+    monkeypatch.setattr(settings, "output_dir", output_dir)
+    monkeypatch.setattr(settings, "runs_dir", output_dir / "runs")
+    monkeypatch.setattr(settings, "db_path", output_dir / "opencr.sqlite")
+    monkeypatch.setattr(main_module, "wait_for_model_server", fake_wait_for_model_server)
+    model_readiness.ready = True
+
+    with TestClient(main_module.app) as client:
+        resp = client.get("/api/runs")
+        assert resp.status_code == 200
+        assert resp.json() == []
