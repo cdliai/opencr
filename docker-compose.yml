@@ -2,6 +2,7 @@ services:
   ocr-model:
     build: ./ocr-model
     runtime: nvidia
+    restart: unless-stopped
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - HF_HOME=/root/.cache/huggingface
@@ -9,7 +10,6 @@ services:
       - hf-cache:/root/.cache/huggingface
     ports:
       - "127.0.0.1:39671:39671"
-      - "100.120.58.95:39671"
     deploy:
       resources:
         reservations:
@@ -32,8 +32,9 @@ services:
 
   ocr-pipeline:
     build: ./ocr_pipeline
+    restart: unless-stopped
     ports:
-      - "127.0.0.1:39672:39672"
+      - "39672:39672"
     volumes:
       - ./input:/data/input
       - ./output:/data/output

@@ -1,68 +1,63 @@
-/**
- * OpenCR Alpine.js application component.
- */
+const STATUS_PILL = {
+  completed: 'pill-success',
+  failed: 'pill-error',
+  processing: 'pill-active',
+  queued: 'pill-warn',
+};
+const PAGE_STATUS = {
+  pass: 'page-pass',
+  warn: 'page-warn',
+  fail: 'page-fail',
+  empty: 'page-empty',
+};
+
+function emptyHFModal() {
+  return { open: false, runId: null, repoId: '', private: false, token: '', submitting: false, result: null };
+}
+
+function emptyInspector() {
+  return { documentId: null, document: null, pageNum: 1, mode: 'txt', text: '' };
+}
+
 function opencrApp() {
   return {
-    // --- State ---
-    tab: 'upload',
     version: '',
     healthStatus: 'checking...',
     healthClass: '',
-    inputDir: '',
+    metrics: {},
 
-    // Upload
+    runs: [],
+    selectedRunId: null,
+    selectedRun: null,
+
+    inputFiles: [],
+    selectedPaths: [],
+    intakeOptions: { stripRefs: false, exportParquet: true, name: '' },
+    creating: false,
     dragOver: false,
     uploadProgress: null,
-    inputFiles: [],
-    selectedFiles: [],
 
-    // Options
-    stripRefs: false,
-
-    // Extraction
-    extracting: false,
-    activeJobId: null,
-    jobStatus: '',
-    progressPercent: 0,
-    docsCompleted: 0,
-    docsTotal: 0,
-    pagesCompleted: 0,
-    totalPagesKnown: 0,
-    _docPages: {},       // {docName: totalPages} — learned from page_start events
-    currentDoc: '',
-    currentPage: null,
-    currentTotalPages: null,
-    completedStems: [],  // stems finished this job, for auto-download
-    events: [],
-
-    // Results
-    outputFiles: [],
-    viewingStem: null,
-    viewingContent: '',
-    viewingMeta: null,
-    showMeta: false,
-
-    // Toasts
+    inspector: emptyInspector(),
+    hfModal: emptyHFModal(),
     toasts: [],
 
-    // Internal
-    _sse: new SSEManager(),
-    _healthInterval: null,
+    _stream: new RunStream(),
 
-    // --- Lifecycle ---
     async init() {
-      await this.checkHealth();
-      this._healthInterval = setInterval(() => this.checkHealth(), 15000);
-      await this.refreshInputFiles();
-      await this.refreshOutputFiles();
+      await Promise.all([
+        this.refreshHealth(),
+        this.refreshMetrics(),
+        this.refreshInputFiles(),
+        this.refreshRuns(),
+      ]);
+      setInterval(() => this.refreshHealth(), 15000);
+      setInterval(() => this.refreshMetrics(), 10000);
     },
 
-    // --- Health ---
-    async checkHealth() {
+    async refreshHealth() {
       try {
         const data = await API.health();
         this.version = data.pipeline_version || '';
-        this.inputDir = data.input_dir || '';
         this.healthStatus = data.status;
         this.healthClass = data.status === 'ready' ? 'ready' : 'waiting';
       } catch {
@@ -71,245 +66,240 @@ function opencrApp() {
       }
     },
 
-    // --- File listing ---
+    async refreshMetrics() {
+      try { this.metrics = await API.metricsSummary(); } catch {}
+    },
+
     async refreshInputFiles() {
-      try {
-        this.inputFiles = await API.listInputFiles();
-      } catch (e) {
-        this.toast('Failed to load input files', 'error');
-      }
+      try { this.inputFiles = await API.listInputFiles(); }
+      catch (e) { this.toast(`Failed to load inputs: ${e.message}`, 'error'); }
     },
 
-    async refreshOutputFiles() {
-      try {
-        this.outputFiles = await API.listOutputFiles();
-      } catch (e) {
-        this.toast('Failed to load output files', 'error');
-      }
+    async refreshRuns() {
+      try { this.runs = await API.listRuns(50); }
+      catch (e) { this.toast(`Failed to load runs: ${e.message}`, 'error'); }
     },
 
-    // --- Upload ---
-    async handleDrop(event) {
-      this.dragOver = false;
-      const files = Array.from(event.dataTransfer.files).filter(
-        f => f.name.toLowerCase().endsWith('.pdf')
-      );
-      if (files.length === 0) {
-        this.toast('Only PDF files are accepted', 'error');
+    async refreshSelectedRun() {
+      if (!this.selectedRunId) return;
+      try { this.selectedRun = await API.getRun(this.selectedRunId); }
+      catch (e) { this.toast(`Failed to refresh run: ${e.message}`, 'error'); }
+    },
+
+    async selectRun(runId) {
+      this._stream.disconnect();
+      if (!runId) {
+        this.selectedRunId = null;
+        this.selectedRun = null;
+        this.inspector = emptyInspector();
         return;
       }
+      this.selectedRunId = runId;
+      try {
+        this.selectedRun = await API.getRun(runId);
+        const firstCompleted = (this.selectedRun.documents || []).find(d => d.status === 'completed');
+        if (firstCompleted) await this.openDocument(firstCompleted.document_id);
+        else this.inspector = emptyInspector();
+        if (['queued', 'processing'].includes(this.selectedRun.status)) this.connectStream(runId);
+      } catch (e) {
+        this.toast(`Failed to load run: ${e.message}`, 'error');
+      }
+    },
+
+    connectStream(runId) {
+      this._stream.connect(runId, async (event) => {
+        if (event.type === 'page_complete' || event.type === 'document_complete') {
+          await this.refreshSelectedRun();
+        }
+        if (event.type === 'run_complete' || event.type === 'run_failed') {
+          await Promise.all([this.refreshSelectedRun(), this.refreshRuns(), this.refreshMetrics()]);
+          const completed = event.type === 'run_complete';
+          this.toast(`Run ${runId} ${completed ? 'completed' : 'failed'}`, completed ? 'success' : 'error');
+        }
+        if (event.type === 'run_started') await this.refreshRuns();
+      });
+    },
+
+    async openDocument(documentId) {
+      if (!this.selectedRunId || !documentId) return;
+      this.inspector.documentId = documentId;
+      try {
+        this.inspector.document = await API.getRunDocument(this.selectedRunId, documentId);
+        this.inspector.pageNum = 1;
+        await this.loadInspectorText();
+      } catch (e) {
+        this.toast(`Open document failed: ${e.message}`, 'error');
+      }
+    },
+
+    async loadInspectorText() {
+      if (!this.selectedRunId || !this.inspector.documentId) return;
+      try {
+        this.inspector.text = await API.getDocumentText(
+          this.selectedRunId, this.inspector.documentId, this.inspector.mode,
+        );
+      } catch (e) {
+        this.inspector.text = `(${e.message})`;
+      }
+    },
+
+    setInspectorMode(mode) {
+      this.inspector.mode = mode;
+      this.loadInspectorText();
+    },
+
+    setInspectorPage(num) {
+      const total = this.inspector.document?.total_pages || 1;
+      this.inspector.pageNum = Math.min(Math.max(1, num), total);
+    },
+
+    pageImageUrl(pageNum) {
+      if (!this.selectedRunId || !this.inspector.documentId) return '';
+      return API.pageImageUrl(this.selectedRunId, this.inspector.documentId, pageNum);
+    },
+
+    pageStatusFor(pageNum) {
+      return (this.inspector.document?.pages || []).find(p => p.page_num === pageNum)?.status || 'pending';
+    },
+
+    pageStatusClass(status) { return PAGE_STATUS[status] || 'page-pending'; },
+    runStatusClass(status) { return STATUS_PILL[status] || 'pill-muted'; },
+
+    async startNewRun() {
+      if (this.selectedPaths.length === 0 || this.creating) return;
+      this.creating = true;
+      try {
+        const result = await API.createRun(this.selectedPaths, {
+          name: this.intakeOptions.name || null,
+          stripRefs: this.intakeOptions.stripRefs,
+          exportParquet: this.intakeOptions.exportParquet,
+        });
+        const dedup = result.documents.filter(d => d.deduped).length;
+        if (dedup > 0) this.toast(`${dedup} document(s) recognized from prior runs`, 'info');
+        this.toast(`Run ${result.run_id} queued`, 'success');
+        this.selectedPaths = [];
+        await this.refreshRuns();
+        await this.selectRun(result.run_id);
+      } catch (e) {
+        this.toast(`Failed to start run: ${e.message}`, 'error');
+      } finally {
+        this.creating = false;
+      }
+    },
+
+    async deleteSelectedRun() {
+      if (!this.selectedRunId) return;
+      if (!confirm(`Delete run ${this.selectedRunId}? Artifact files remain on disk.`)) return;
+      try {
+        await API.deleteRun(this.selectedRunId);
+        this.toast(`Run ${this.selectedRunId} deleted`, 'info');
+        await this.selectRun(null);
+        await this.refreshRuns();
+      } catch (e) {
+        this.toast(`Delete failed: ${e.message}`, 'error');
+      }
+    },
+
+    toggleSelected(path) {
+      const i = this.selectedPaths.indexOf(path);
+      if (i === -1) this.selectedPaths.push(path); else this.selectedPaths.splice(i, 1);
+    },
+
+    selectAllInputs(checked) {
+      this.selectedPaths = checked ? this.inputFiles.map(f => f.path) : [];
+    },
+
+    get allInputsSelected() {
+      return this.inputFiles.length > 0 && this.selectedPaths.length === this.inputFiles.length;
+    },
+
+    async handleDrop(event) {
+      this.dragOver = false;
+      const files = Array.from(event.dataTransfer.files).filter(f => f.name.toLowerCase().endsWith('.pdf'));
+      if (files.length === 0) return this.toast('Only PDF files are accepted', 'error');
       await this.uploadFiles(files);
     },
 
     async handleFileSelect(event) {
-      const files = Array.from(event.target.files);
+      const files = Array.from(event.target.files || []);
       if (files.length > 0) await this.uploadFiles(files);
       event.target.value = '';
     },
 
     async uploadFiles(files) {
-      let success = 0;
+      let count = 0;
       for (const file of files) {
         try {
           this.uploadProgress = 0;
-          await API.upload(file, (pct) => { this.uploadProgress = pct; });
-          success++;
+          await API.upload(file, p => { this.uploadProgress = p; });
+          count += 1;
         } catch (e) {
-          this.toast(`Upload failed: ${file.name} - ${e.message}`, 'error');
+          this.toast(`Upload failed: ${file.name} — ${e.message}`, 'error');
         }
       }
       this.uploadProgress = null;
-      if (success > 0) {
-        this.toast(`Uploaded ${success} file(s)`, 'success');
+      if (count > 0) {
+        this.toast(`Uploaded ${count} file(s)`, 'success');
         await this.refreshInputFiles();
       }
     },
 
-    // --- Selection ---
-    get allSelected() {
-      return this.inputFiles.length > 0 &&
-        this.selectedFiles.length === this.inputFiles.length;
+    downloadArtifact(documentId, artifact) {
+      this._download(API.artifactDownloadUrl(this.selectedRunId, documentId, artifact));
     },
 
-    toggleSelectAll(event) {
-      if (event.target.checked) {
-        this.selectedFiles = this.inputFiles.map(f => f.path);
-      } else {
-        this.selectedFiles = [];
-      }
+    downloadDataset() {
+      if (this.selectedRunId) this._download(API.datasetDownloadUrl(this.selectedRunId));
     },
 
-    // --- Extraction ---
-    async startExtraction() {
-      if (this.selectedFiles.length === 0 || this.extracting) return;
-      this.extracting = true;
-      this.events = [];
+    openHFModal() {
+      if (!this.selectedRunId) return;
+      this.hfModal = { ...emptyHFModal(), open: true, runId: this.selectedRunId };
+    },
 
+    closeHFModal() { this.hfModal.open = false; },
+
+    async submitHFPublish() {
+      if (!this.hfModal.repoId) return this.toast('Repo id required (e.g. user/dataset)', 'error');
+      this.hfModal.submitting = true;
       try {
-        const data = await API.createJob(this.selectedFiles, { stripRefs: this.stripRefs });
-        this.activeJobId = data.job_id;
-        this.jobStatus = 'processing';
-        this.progressPercent = 0;
-        this.docsCompleted = 0;
-        this.docsTotal = this.selectedFiles.length;
-        this.pagesCompleted = 0;
-        this.totalPagesKnown = 0;
-        this._docPages = {};
-        this.completedStems = [];
-        this.currentDoc = '';
-        this.currentPage = null;
-        this.currentTotalPages = null;
-
-        this.tab = 'progress';
-        this.connectSSE(data.job_id);
-        this.toast(`Job ${data.job_id} started`, 'info');
+        this.hfModal.result = await API.publishToHF(this.hfModal.runId, {
+          repo_id: this.hfModal.repoId,
+          private: this.hfModal.private,
+          token: this.hfModal.token || null,
+        });
+        this.toast('Published to HuggingFace', 'success');
       } catch (e) {
-        this.toast(`Failed to start extraction: ${e.message}`, 'error');
+        this.toast(`Publish failed: ${e.message}`, 'error');
       } finally {
-        this.extracting = false;
+        this.hfModal.submitting = false;
       }
     },
 
-    connectSSE(jobId) {
-      this._sse.connect(
-        jobId,
-        (event) => this.handleSSEEvent(event),
-        () => {} // auto-reconnects
-      );
+    _download(url) {
+      const a = document.createElement('a');
+      a.href = url; a.target = '_blank'; a.rel = 'noopener';
+      document.body.appendChild(a); a.click(); a.remove();
     },
 
-    handleSSEEvent(event) {
-      const time = new Date().toLocaleTimeString();
-      let detail = '';
-
-      switch (event.type) {
-        case 'page_start':
-          this.currentDoc = event.document || '';
-          this.currentPage = event.page;
-          this.currentTotalPages = event.total_pages;
-          // Register this document's page count (first time we see it)
-          if (event.document && event.total_pages && !this._docPages[event.document]) {
-            this._docPages[event.document] = event.total_pages;
-            this.totalPagesKnown = Object.values(this._docPages).reduce((a, b) => a + b, 0);
-          }
-          detail = `${event.document} p${event.page}/${event.total_pages}`;
-          break;
-
-        case 'page_complete':
-          this.pagesCompleted++;
-          this._updatePageProgress();
-          detail = `${event.document || ''} p${event.page || ''} - ${event.validation_status || ''}`;
-          if (event.processing_time_ms) {
-            detail += ` (${Math.round(event.processing_time_ms)}ms)`;
-          }
-          break;
-
-        case 'page_retry':
-          detail = `${event.document || ''} p${event.page || ''} retry #${event.attempt || ''}`;
-          break;
-
-        case 'document_complete': {
-          this.docsCompleted++;
-          // Extract stem from document filename for auto-download
-          const docName = event.document || '';
-          const stem = docName.replace(/\.pdf$/i, '');
-          if (stem) this.completedStems.push(stem);
-          this._updatePageProgress();
-          detail = `${docName} done`;
-          break;
-        }
-
-        case 'document_error':
-          detail = `${event.document || ''}: ${event.error || 'unknown error'}`;
-          break;
-
-        case 'job_complete': {
-          this.jobStatus = 'completed';
-          this.progressPercent = 100;
-          this.currentDoc = '';
-          this.currentPage = null;
-          const s = event.summary || {};
-          detail = `${event.total_documents} docs, ${event.total_pages} pages (pass:${s.pass} warn:${s.warn} fail:${s.fail})`;
-          this.toast('Extraction complete! Downloading results...', 'success');
-          this.refreshOutputFiles();
-          this._autoDownloadResults();
-          break;
-        }
-
-        default:
-          detail = JSON.stringify(event);
-      }
-
-      this.events.push({ type: event.type, time, detail });
-
-      // Auto-scroll log
-      this.$nextTick(() => {
-        const el = this.$refs.logEntries;
-        if (el) el.scrollTop = el.scrollHeight;
-      });
-    },
-
-    _updatePageProgress() {
-      if (this.totalPagesKnown > 0) {
-        // We know some/all page counts — use page-level progress
-        // For docs we haven't seen yet, estimate based on average pages per known doc
-        const knownDocs = Object.keys(this._docPages).length;
-        const unknownDocs = Math.max(0, this.docsTotal - knownDocs);
-        const avgPages = this.totalPagesKnown / Math.max(1, knownDocs);
-        const estimatedTotal = this.totalPagesKnown + (unknownDocs * avgPages);
-        this.progressPercent = Math.min(99, Math.round((this.pagesCompleted / estimatedTotal) * 100));
-      } else {
-        // Fallback: document-level progress
-        this.progressPercent = Math.round((this.docsCompleted / Math.max(1, this.docsTotal)) * 100);
-      }
-    },
-
-    _autoDownloadResults() {
-      // Trigger browser download for each completed file, staggered to avoid popup blockers
-      this.completedStems.forEach((stem, i) => {
-        setTimeout(() => {
-          const a = document.createElement('a');
-          a.href = API.downloadUrl(stem);
-          a.download = stem + '.md';
-          document.body.appendChild(a);
-          a.click();
-          a.remove();
-        }, i * 500);
-      });
-    },
-
-    // --- Results ---
-    async viewResult(stem) {
-      this.viewingStem = stem;
-      this.showMeta = false;
-      this.viewingContent = 'Loading...';
-      this.viewingMeta = null;
-
-      try {
-        const [content, meta] = await Promise.all([
-          API.getOutputMd(stem),
-          API.getOutputMeta(stem),
-        ]);
-        this.viewingContent = content;
-        this.viewingMeta = meta;
-      } catch (e) {
-        this.viewingContent = 'Error loading file: ' + e.message;
-      }
-    },
-
-    downloadResult(stem) {
-      window.open(API.downloadUrl(stem), '_blank');
-    },
-
-    // --- Helpers ---
     formatSize(bytes) {
-      if (bytes < 1024) return bytes + ' B';
-      if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
-      return (bytes / 1048576).toFixed(1) + ' MB';
+      if (!bytes) return '0 B';
+      if (bytes < 1024) return `${bytes} B`;
+      if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
+      return `${(bytes / 1048576).toFixed(1)} MB`;
+    },
+
+    formatMetric(value, digits = 1) { return Number(value || 0).toFixed(digits); },
+
+    formatTimestamp(iso) {
+      if (!iso) return '—';
+      try { return new Date(iso).toLocaleString(); } catch { return iso; }
     },
 
     toast(message, type = 'info') {
-      this.toasts.push({ message, type });
+      const id = Math.random().toString(36).slice(2);
+      this.toasts.push({ id, message, type });
+      setTimeout(() => { this.toasts = this.toasts.filter(t => t.id !== id); }, 4000);
     },
   };
 }

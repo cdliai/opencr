@@ -4,8 +4,9 @@ import unicodedata
 
 class TextCleaner:
     """
-    Post-processing and normalization for OCR output.
-    All text output is UTF-8 NFC normalized — critical for Turkish and Arabic diacritics.
+    Post-processing and normalization
+    for OCR output. All text output is UTF-8 NFC 
+    normalized — critical for Turkish and Arabic diacritics.
     """
 
     MODEL_TOKENS = [
@@ -49,6 +50,18 @@ class TextCleaner:
         text = self._rejoin_hyphens(text)
         text = self._normalize_whitespace(text)
         text = self._fix_common_ocr_issues(text)
+        return text.strip()
+
+    def clean_fidelity(self, text: str, strip_refs: bool = False) -> str:
+        """Minimal cleanup that preserves layout as closely as possible."""
+        if not text:
+            return ""
+
+        text = self._normalize_unicode(text)
+        if strip_refs:
+            text = self._strip_ref_blocks(text)
+        text = self._strip_model_tokens(text)
+        text = text.replace("\x00", "")
         return text.strip()
 
     def _strip_ref_blocks(self, text: str) -> str:

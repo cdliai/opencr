@@ -70,6 +70,11 @@ class TestWhitespaceNormalization:
         result = cleaner.clean(text)
         assert "Line 1\nLine 2" == result
 
+    def test_fidelity_clean_preserves_page_spacing(self, cleaner):
+        text = "Line 1\n\n\nLine 2<|im_end|>\x00"
+        result = cleaner.clean_fidelity(text)
+        assert result == "Line 1\n\n\nLine 2"
+
 
 class TestOCRFixes:
     def test_curly_quotes_replaced(self, cleaner):

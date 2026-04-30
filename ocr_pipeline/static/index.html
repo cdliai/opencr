@@ -3,206 +3,351 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>OpenCR</title>
+  <title>OpenCR — OCR Operator Console · cdli.ai</title>
+  <meta name="description" content="OpenCR — open-source OCR-to-dataset pipeline by cdli.ai.">
+  <meta name="author" content="cdli.ai">
   <link rel="stylesheet" href="/static/css/style.css">
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
   <script src="/static/js/api.js"></script>
   <script src="/static/js/sse.js"></script>
   <script src="/static/js/app.js"></script>
 </head>
-<body>
+<body x-data="opencrApp()" x-init="init()">
 
-<div id="app" x-data="opencrApp()" x-init="init()">
-
-  <!-- Header -->
-  <header class="header">
-    <div class="header-left">
-      <h1 class="logo">OpenCR</h1>
-      <span class="version" x-text="'v' + version"></span>
+<header class="topbar">
+  <div class="brand">
+    <p class="eyebrow">OCR Operations · by cdli.ai</p>
+    <div class="title-row">
+      <h1>OpenCR</h1>
+      <span class="version" x-text="version ? 'v' + version : ''"></span>
     </div>
-    <div class="header-right">
-      <span class="health-dot" :class="healthClass" :title="healthStatus"></span>
-      <span class="health-label" x-text="healthStatus"></span>
-    </div>
-  </header>
-
-  <!-- Tabs -->
-  <nav class="tabs">
-    <button class="tab" :class="{ active: tab === 'upload' }" @click="tab = 'upload'">
-      Upload &amp; Extract
-    </button>
-    <button class="tab" :class="{ active: tab === 'progress' }" @click="tab = 'progress'">
-      Progress
-      <span class="badge" x-show="activeJobId" x-text="progressPercent + '%'"></span>
-    </button>
-    <button class="tab" :class="{ active: tab === 'results' }" @click="tab = 'results'">
-      Results
-      <span class="badge" x-show="outputFiles.length" x-text="outputFiles.length"></span>
-    </button>
-  </nav>
-
-  <!-- Toast container -->
-  <div class="toast-container">
-    <template x-for="(t, i) in toasts" :key="i">
-      <div class="toast" :class="t.type" x-text="t.message"
-           x-transition x-init="setTimeout(() => toasts.splice(i, 1), 4000)"></div>
-    </template>
   </div>
+  <div class="topbar-meta">
+    <div class="metric-strip">
+      <div class="metric"><span class="metric-label">Active</span><span class="metric-value" x-text="metrics.active_jobs"></span></div>
+      <div class="metric"><span class="metric-label">Pages</span><span class="metric-value" x-text="metrics.pages_processed_total"></span></div>
+      <div class="metric"><span class="metric-label">Tok/s</span><span class="metric-value" x-text="formatMetric(metrics.average_tokens_per_second, 1)"></span></div>
+      <div class="metric"><span class="metric-label">Fail/Retry</span><span class="metric-value"><span x-text="metrics.pages_fail_total"></span><span class="metric-divider">/</span><span x-text="metrics.page_retries_total"></span></span></div>
+    </div>
+    <div class="status-cluster">
+      <span class="health-dot" :class="healthClass"></span>
+      <span class="status-text" x-text="healthStatus"></span>
+    </div>
+  </div>
+</header>
 
-  <!-- Tab: Upload & Extract -->
-  <main class="content" x-show="tab === 'upload'">
+<main class="console-grid">
 
-    <!-- Drop zone -->
-    <div class="drop-zone"
-         :class="{ 'drag-over': dragOver }"
-         @dragover.prevent="dragOver = true"
-         @dragleave.prevent="dragOver = false"
-         @drop.prevent="handleDrop($event)"
-         @click="$refs.fileInput.click()">
-      <input type="file" accept=".pdf" multiple x-ref="fileInput" hidden @change="handleFileSelect($event)">
-      <div class="drop-zone-content">
-        <svg class="drop-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path d="M12 16V4m0 0L8 8m4-4l4 4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/>
-        </svg>
-        <p class="drop-text">Drop PDFs here or click to browse</p>
-        <p class="drop-hint" x-show="uploadProgress !== null" x-text="'Uploading... ' + uploadProgress + '%'"></p>
+  <!-- Left rail: Runs sidebar -->
+  <aside class="rail">
+    <div class="rail-header">
+      <h2>Runs</h2>
+      <div class="rail-actions">
+        <button class="btn btn-ghost btn-sm" @click="refreshRuns">Refresh</button>
+        <button class="btn btn-primary btn-sm" @click="selectRun(null)">+ New</button>
       </div>
     </div>
+    <ul class="run-list">
+      <template x-for="run in runs" :key="run.id">
+        <li class="run-item"
+            :class="{ active: selectedRunId === run.id }"
+            @click="selectRun(run.id)">
+          <div class="run-item-row">
+            <span class="run-id" x-text="run.id"></span>
+            <span class="pill" :class="runStatusClass(run.status)" x-text="run.status"></span>
+          </div>
+          <div class="run-item-meta">
+            <span x-text="run.name || `${run.documents_total} doc${run.documents_total === 1 ? '' : 's'} · ${run.pages_total} pages`"></span>
+          </div>
+          <div class="run-item-progress" x-show="run.status === 'processing'">
+            <div class="progress-mini">
+              <div class="progress-mini-fill" :style="`width:${(run.progress * 100) || 0}%`"></div>
+            </div>
+            <span class="run-item-progress-text" x-text="Math.round((run.progress || 0) * 100) + '%'"></span>
+          </div>
+          <div class="run-item-footer">
+            <span class="run-time" x-text="formatTimestamp(run.created_at)"></span>
+          </div>
+        </li>
+      </template>
+      <li class="run-list-empty" x-show="runs.length === 0">No runs yet.</li>
+    </ul>
+  </aside>
 
-    <!-- Input file list -->
-    <div class="section">
-      <div class="section-header">
-        <h2>Input Files</h2>
-        <button class="btn btn-sm" @click="refreshInputFiles">Refresh</button>
+  <!-- Center: Run detail or intake -->
+  <section class="stage">
+
+    <!-- Intake panel when no run selected -->
+    <div class="intake" x-show="!selectedRunId">
+      <header class="stage-header">
+        <h2>Start a new run</h2>
+        <p class="stage-sub">Drop PDFs, pick which to extract, and OpenCR will OCR, validate, and bundle them.</p>
+      </header>
+
+      <div class="drop-zone"
+           :class="{ 'drag-over': dragOver }"
+           @dragover.prevent="dragOver = true"
+           @dragleave.prevent="dragOver = false"
+           @drop.prevent="handleDrop($event)"
+           @click="$refs.fileInput.click()">
+        <input type="file" accept=".pdf" multiple x-ref="fileInput" hidden @change="handleFileSelect($event)">
+        <p class="drop-title">Drop PDFs or click to browse</p>
+        <p class="drop-note">Files are deduplicated by content hash. Re-uploading the same PDF is free.</p>
+        <p class="drop-progress" x-show="uploadProgress !== null" x-text="'Uploading ' + uploadProgress + '%'"></p>
       </div>
 
-      <div class="empty-state" x-show="inputFiles.length === 0">
-        <p>No PDF files in input directory</p>
-      </div>
-
-      <div class="file-list" x-show="inputFiles.length > 0">
-        <label class="file-item select-all">
-          <input type="checkbox" @change="toggleSelectAll($event)" :checked="allSelected">
-          <span>Select all (<span x-text="inputFiles.length"></span> files)</span>
+      <div class="intake-toolbar">
+        <label class="checkbox-row">
+          <input type="checkbox" :checked="allInputsSelected" @change="selectAllInputs($event.target.checked)">
+          <span>Select all</span>
         </label>
-        <template x-for="f in inputFiles" :key="f.name">
-          <label class="file-item">
-            <input type="checkbox" :value="f.path" x-model="selectedFiles">
-            <span class="file-name" x-text="f.name"></span>
-            <span class="file-size" x-text="formatSize(f.size)"></span>
-          </label>
-        </template>
+        <span class="muted-note">
+          <span x-text="selectedPaths.length"></span> of <span x-text="inputFiles.length"></span> selected
+        </span>
+        <button class="btn btn-ghost btn-sm" @click="refreshInputFiles">Refresh inputs</button>
       </div>
 
-      <div class="extract-options">
+      <ul class="file-list" x-show="inputFiles.length > 0">
+        <template x-for="file in inputFiles" :key="file.path">
+          <li class="file-item">
+            <input type="checkbox"
+                   :checked="selectedPaths.includes(file.path)"
+                   @change="toggleSelected(file.path)">
+            <span class="file-name" x-text="file.name"></span>
+            <span class="file-size" x-text="formatSize(file.size)"></span>
+          </li>
+        </template>
+      </ul>
+      <p class="empty-note" x-show="inputFiles.length === 0">No PDFs in input directory. Upload above.</p>
+
+      <div class="intake-options">
+        <label class="field">
+          <span>Run name (optional)</span>
+          <input type="text" placeholder="e.g. arabic-corpus-batch-3" x-model="intakeOptions.name">
+        </label>
         <label class="option-toggle">
-          <input type="checkbox" x-model="stripRefs">
-          <span>Strip reference blocks</span>
-          <span class="option-hint">(remove bounding-box annotations from output)</span>
+          <input type="checkbox" x-model="intakeOptions.stripRefs">
+          <div>
+            <strong>Strip reference blocks</strong>
+            <p>Remove DeepSeek bounding-box markup from cleaned text.</p>
+          </div>
+        </label>
+        <label class="option-toggle">
+          <input type="checkbox" x-model="intakeOptions.exportParquet">
+          <div>
+            <strong>Export Parquet bundle</strong>
+            <p>Build train/validation/test-split Parquet for HuggingFace.</p>
+          </div>
         </label>
       </div>
 
-      <button class="btn btn-primary"
-              :disabled="selectedFiles.length === 0 || extracting"
-              @click="startExtraction">
-        <span x-show="!extracting">Start Extraction (<span x-text="selectedFiles.length"></span> files)</span>
-        <span x-show="extracting">Starting...</span>
-      </button>
-    </div>
-  </main>
-
-  <!-- Tab: Progress -->
-  <main class="content" x-show="tab === 'progress'">
-
-    <div class="empty-state" x-show="!activeJobId && events.length === 0">
-      <p>No active extraction job</p>
-      <p class="hint">Start an extraction from the Upload tab</p>
+      <div class="intake-cta">
+        <button class="btn btn-primary"
+                :disabled="selectedPaths.length === 0 || creating"
+                @click="startNewRun">
+          <span x-show="!creating">Start OCR run</span>
+          <span x-show="creating">Starting...</span>
+        </button>
+        <p class="muted-note">Pages process concurrently — large PDFs land fast.</p>
+      </div>
     </div>
 
-    <template x-if="activeJobId">
+    <!-- Run detail when a run is selected -->
+    <div class="run-detail" x-show="selectedRunId && selectedRun">
+      <header class="stage-header">
+        <div>
+          <h2>Run <code x-text="selectedRun?.id"></code></h2>
+          <p class="stage-sub" x-text="selectedRun?.name || `${selectedRun?.documents_total} document${selectedRun?.documents_total === 1 ? '' : 's'}`"></p>
+        </div>
+        <div class="stage-actions">
+          <span class="pill" :class="runStatusClass(selectedRun?.status)" x-text="selectedRun?.status"></span>
+          <button class="btn btn-ghost btn-sm" @click="refreshSelectedRun">Refresh</button>
+          <button class="btn btn-ghost btn-sm" @click="deleteSelectedRun" x-show="selectedRun?.status !== 'processing'">Delete</button>
+        </div>
+      </header>
+
+      <section class="run-summary">
+        <div class="summary-card">
+          <span class="summary-label">Progress</span>
+          <strong x-text="Math.round((selectedRun?.progress || 0) * 100) + '%'"></strong>
+          <div class="progress-track" x-show="selectedRun?.status === 'processing' || selectedRun?.status === 'completed'">
+            <div class="progress-fill" :style="`width:${(selectedRun?.progress || 0) * 100}%`"></div>
+          </div>
+        </div>
+        <div class="summary-card">
+          <span class="summary-label">Pages</span>
+          <strong>
+            <span x-text="selectedRun?.pages_completed || 0"></span>
+            <span class="muted-note">/ <span x-text="selectedRun?.pages_total || 0"></span></span>
+          </strong>
+        </div>
+        <div class="summary-card">
+          <span class="summary-label">Stage</span>
+          <strong x-text="selectedRun?.stage || '—'"></strong>
+        </div>
+        <div class="summary-card">
+          <span class="summary-label">Started</span>
+          <strong x-text="formatTimestamp(selectedRun?.started_at || selectedRun?.created_at)"></strong>
+        </div>
+      </section>
+
+      <section class="run-actions" x-show="selectedRun?.status === 'completed'">
+        <button class="btn btn-ghost" @click="downloadDataset" x-show="selectedRun?.dataset_bundle">
+          ↓ Dataset bundle (zip)
+        </button>
+        <button class="btn btn-primary" @click="openHFModal" x-show="selectedRun?.dataset_bundle">
+          🤗 Publish to HuggingFace
+        </button>
+      </section>
+
+      <section class="documents-grid">
+        <h3 class="section-title">Documents</h3>
+        <ul class="doc-list">
+          <template x-for="doc in (selectedRun?.documents || [])" :key="doc.document_id">
+            <li class="doc-card"
+                :class="{ active: inspector.documentId === doc.document_id }"
+                @click="openDocument(doc.document_id)">
+              <div class="doc-head">
+                <span class="doc-name" x-text="doc.filename"></span>
+                <span class="pill pill-sm"
+                      :class="runStatusClass(doc.status)"
+                      x-text="doc.status"></span>
+              </div>
+              <div class="doc-meta">
+                <span x-text="`${doc.total_pages || 0} pages`"></span>
+                <span class="muted-note">·</span>
+                <span x-text="`${doc.pages_pass}P / ${doc.pages_warn}W / ${doc.pages_fail}F`"></span>
+                <span class="muted-note" x-show="doc.dominant_script"> · <span x-text="doc.dominant_script"></span></span>
+              </div>
+              <div class="heatmap" x-show="doc.total_pages">
+                <template x-for="p in doc.total_pages" :key="p">
+                  <span class="heat-cell"
+                        :class="(() => {
+                          const pages = inspector.documentId === doc.document_id ? (inspector.document?.pages || []) : [];
+                          const found = pages.find(pp => pp.page_num === p);
+                          return found ? pageStatusClass(found.status) : 'page-pending';
+                        })()"
+                        :title="`Page ${p}`"></span>
+                </template>
+              </div>
+            </li>
+          </template>
+        </ul>
+        <p class="empty-note" x-show="(selectedRun?.documents || []).length === 0">No documents in this run.</p>
+      </section>
+    </div>
+
+  </section>
+
+  <!-- Right: Inspector -->
+  <aside class="inspector" x-show="selectedRunId && inspector.documentId">
+    <header class="inspector-header">
       <div>
-        <!-- Overall progress -->
-        <div class="progress-header">
-          <span>Job <code x-text="activeJobId"></code></span>
-          <span x-text="jobStatus"></span>
-        </div>
-        <div class="progress-bar-track">
-          <div class="progress-bar-fill" :style="'width:' + progressPercent + '%'"></div>
-        </div>
-        <div class="progress-stats">
-          <span x-text="docsCompleted + '/' + docsTotal + ' documents'"></span>
-          <span x-text="pagesCompleted + ' pages completed'"></span>
-          <span x-text="progressPercent + '%'"></span>
-        </div>
-
-        <!-- Current document progress -->
-        <div class="current-doc" x-show="currentDoc">
-          <span x-text="currentDoc"></span>
-          <span x-show="currentPage">
-            — page <span x-text="currentPage"></span>/<span x-text="currentTotalPages"></span>
-          </span>
-        </div>
+        <p class="eyebrow">Inspector</p>
+        <h3 x-text="inspector.document?.filename || ''"></h3>
       </div>
-    </template>
+      <div class="inspector-tabs">
+        <button class="tab" :class="{ active: inspector.mode === 'txt' }" @click="setInspectorMode('txt')">Clean</button>
+        <button class="tab" :class="{ active: inspector.mode === 'raw' }" @click="setInspectorMode('raw')">Raw</button>
+        <button class="tab" :class="{ active: inspector.mode === 'md' }" @click="setInspectorMode('md')">Markdown</button>
+      </div>
+    </header>
 
-    <!-- Event log -->
-    <div class="event-log" x-show="events.length > 0">
-      <h3>Event Log</h3>
-      <div class="log-entries" x-ref="logEntries">
-        <template x-for="(e, i) in events" :key="i">
-          <div class="log-entry" :class="'type-' + e.type">
-            <span class="log-time" x-text="e.time"></span>
-            <span class="log-type" x-text="e.type"></span>
-            <span class="log-detail" x-text="e.detail"></span>
-          </div>
-        </template>
+    <div class="inspector-pdf">
+      <div class="page-controls">
+        <button class="btn btn-ghost btn-sm"
+                :disabled="inspector.pageNum <= 1"
+                @click="setInspectorPage(inspector.pageNum - 1)">◀</button>
+        <span class="page-counter">
+          Page <strong x-text="inspector.pageNum"></strong> /
+          <span x-text="inspector.document?.total_pages || 1"></span>
+          <span class="page-status-pill" :class="pageStatusClass(pageStatusFor(inspector.pageNum))"
+                x-text="pageStatusFor(inspector.pageNum)"></span>
+        </span>
+        <button class="btn btn-ghost btn-sm"
+                :disabled="inspector.pageNum >= (inspector.document?.total_pages || 1)"
+                @click="setInspectorPage(inspector.pageNum + 1)">▶</button>
+      </div>
+      <div class="page-canvas">
+        <img :src="pageImageUrl(inspector.pageNum)"
+             :alt="`Page ${inspector.pageNum}`"
+             loading="lazy">
       </div>
     </div>
-  </main>
 
-  <!-- Tab: Results -->
-  <main class="content" x-show="tab === 'results'">
-
-    <div class="section-header">
-      <h2>Extraction Results</h2>
-      <button class="btn btn-sm" @click="refreshOutputFiles">Refresh</button>
+    <div class="inspector-text">
+      <pre x-text="inspector.text || '(empty)'"></pre>
     </div>
 
-    <div class="empty-state" x-show="outputFiles.length === 0">
-      <p>No extraction results yet</p>
+    <div class="inspector-footer">
+      <button class="btn btn-ghost btn-sm" @click="downloadArtifact(inspector.documentId, 'txt')">↓ Clean</button>
+      <button class="btn btn-ghost btn-sm" @click="downloadArtifact(inspector.documentId, 'raw_txt')">↓ Raw</button>
+      <button class="btn btn-ghost btn-sm" @click="downloadArtifact(inspector.documentId, 'md')">↓ MD</button>
+      <button class="btn btn-ghost btn-sm" @click="downloadArtifact(inspector.documentId, 'meta')">↓ Meta</button>
+      <button class="btn btn-ghost btn-sm" @click="downloadArtifact(inspector.documentId, 'source')">↓ Source PDF</button>
     </div>
+  </aside>
 
-    <div class="results-layout" x-show="outputFiles.length > 0">
-      <!-- File list sidebar -->
-      <div class="results-list">
-        <template x-for="f in outputFiles" :key="f.stem">
-          <div class="result-item" :class="{ active: viewingStem === f.stem }" @click="viewResult(f.stem)">
-            <span class="file-name" x-text="f.stem"></span>
-            <span class="file-size" x-text="formatSize(f.md_size)"></span>
-          </div>
-        </template>
-      </div>
+  <aside class="inspector inspector-empty" x-show="selectedRunId && !inspector.documentId">
+    <p class="empty-note">Select a document to inspect.</p>
+  </aside>
 
-      <!-- Content viewer -->
-      <div class="result-viewer" x-show="viewingStem">
-        <div class="viewer-header">
-          <h3 x-text="viewingStem + '.md'"></h3>
-          <div class="viewer-actions">
-            <button class="btn btn-sm" @click="downloadResult(viewingStem)">Download .md</button>
-            <button class="btn btn-sm" x-show="viewingMeta" @click="showMeta = !showMeta">
-              <span x-text="showMeta ? 'Show Content' : 'Show Metadata'"></span>
-            </button>
-          </div>
-        </div>
-        <div class="viewer-body">
-          <pre x-show="!showMeta" class="md-content" x-text="viewingContent"></pre>
-          <pre x-show="showMeta" class="meta-content" x-text="JSON.stringify(viewingMeta, null, 2)"></pre>
-        </div>
-      </div>
+</main>
+
+<!-- HF Publish modal -->
+<div class="modal-backdrop" x-show="hfModal.open" @click.self="closeHFModal" x-cloak>
+  <div class="modal">
+    <header class="modal-header">
+      <h3>Publish to HuggingFace</h3>
+      <button class="btn btn-ghost btn-sm" @click="closeHFModal">×</button>
+    </header>
+    <div class="modal-body" x-show="!hfModal.result">
+      <label class="field">
+        <span>Repo id</span>
+        <input type="text" placeholder="username/dataset-name" x-model="hfModal.repoId">
+      </label>
+      <label class="field">
+        <span>HF token (optional, uses HF_TOKEN env if blank)</span>
+        <input type="password" placeholder="hf_..." x-model="hfModal.token">
+      </label>
+      <label class="checkbox-row">
+        <input type="checkbox" x-model="hfModal.private">
+        <span>Private repository</span>
+      </label>
+      <p class="muted-note">A README.md dataset card and `pages.parquet` / `documents.parquet` files will be uploaded.</p>
     </div>
-  </main>
-
+    <div class="modal-body" x-show="hfModal.result">
+      <p>Published successfully.</p>
+      <p>
+        <a :href="hfModal.result?.repo_url" target="_blank" rel="noopener" x-text="hfModal.result?.repo_url"></a>
+      </p>
+    </div>
+    <footer class="modal-footer">
+      <button class="btn btn-ghost" @click="closeHFModal">Close</button>
+      <button class="btn btn-primary"
+              :disabled="hfModal.submitting || hfModal.result"
+              @click="submitHFPublish"
+              x-show="!hfModal.result">
+        <span x-show="!hfModal.submitting">Publish</span>
+        <span x-show="hfModal.submitting">Publishing...</span>
+      </button>
+    </footer>
+  </div>
 </div>
+
+<div class="toast-container">
+  <template x-for="toast in toasts" :key="toast.id">
+    <div class="toast" :class="toast.type" x-text="toast.message"></div>
+  </template>
+</div>
+
+<footer class="appfoot">
+  <span>OpenCR — open source.</span>
+  <span class="appfoot-sep">·</span>
+  <span>Made by <a href="https://cdli.ai" target="_blank" rel="noopener">cdli.ai</a></span>
+  <span class="appfoot-sep">·</span>
+  <span>© cdli.ai · All rights reserved.</span>
+</footer>
 
 </body>
 </html>

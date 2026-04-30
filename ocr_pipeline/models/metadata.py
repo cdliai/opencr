@@ -9,9 +9,9 @@ class PageMetadata:
 
     # Extraction info
     processing_time_ms: float
-    extraction_mode: str  # "markdown" | "free_ocr" | "figure"
-    extraction_attempt: int  # 1 = first try, 2+ = retry
-    dpi_used: int
+    extraction_mode: str                # "markdown" | "free_ocr" | "figure"
+    extraction_attempt: int             # 1 = first try, 2+ = retry
+    dpi_used: int                       # DPI stands for the resolution at which OCR was performed (may differ from original PDF if resampled)
 
     # Content metrics
     text_length_chars: int
@@ -52,6 +52,7 @@ class DocumentMetadata:
     filename: str
     file_path: str
     file_size_bytes: int
+    file_sha256: str
 
     # PDF info
     total_pages: int

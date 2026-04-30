@@ -10,7 +10,7 @@ class Settings(BaseSettings):
 
     # Startup readiness
     model_ready_timeout: int = 300  # Max seconds to wait for model server on startup
-    model_ready_interval: int = 5  # Seconds between readiness checks
+    model_ready_interval: int = 5   # Seconds between readiness checks
 
     # NGram processor defaults
     ngram_size: int = 30
@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     # Paths
     input_dir: Path = Path("/data/input")
     output_dir: Path = Path("/data/output")
+    runs_dir: Path = Path("/data/output/runs")
+    db_path: Path = Path("/data/output/opencr.sqlite")
 
     # Server
     host: str = "0.0.0.0"
