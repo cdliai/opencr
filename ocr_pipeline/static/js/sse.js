@@ -1,29 +1,27 @@
 /**
- * SSE connection manager for job progress streaming.
+ * Run-event stream manager. Replays missed events on reconnect via after_event_id.
  */
-class SSEManager {
+class RunStream {
   constructor() {
     this.source = null;
-    this.jobId = null;
+    this.runId = null;
+    this.lastEventId = 0;
   }
 
-  /**
-   * Connect to a job's SSE stream.
-   * @param {string} jobId
-   * @param {function} onEvent - Called with parsed event data
-   * @param {function} onError - Called on connection error
-   */
-  connect(jobId, onEvent, onError) {
+  connect(runId, onEvent, onError) {
     this.disconnect();
-    this.jobId = jobId;
+    this.runId = runId;
+    this.lastEventId = 0;
 
-    this.source = new EventSource(`/api/jobs/${jobId}/stream`);
+    const url = `/api/runs/${encodeURIComponent(runId)}/stream?after_event_id=${this.lastEventId}`;
+    this.source = new EventSource(url);
 
     this.source.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data);
+        if (data.event_id) this.lastEventId = data.event_id;
         onEvent(data);
-        if (data.type === 'job_complete') {
+        if (data.type === 'run_complete' || data.type === 'run_failed') {
           this.disconnect();
         }
       } catch (err) {
@@ -33,7 +31,6 @@ class SSEManager {
 
     this.source.onerror = () => {
       if (onError) onError();
-      // EventSource auto-reconnects, but if job is done we close
       if (this.source && this.source.readyState === EventSource.CLOSED) {
         this.disconnect();
       }
@@ -45,6 +42,10 @@ class SSEManager {
       this.source.close();
       this.source = null;
     }
-    this.jobId = null;
+    this.runId = null;
+  }
+
+  isConnected() {
+    return this.source !== null;
   }
 }
