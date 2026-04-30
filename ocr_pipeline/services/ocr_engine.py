@@ -72,4 +72,8 @@ class OCREngine:
                 },
             },
         )
-        return response.choices[0].message.content
+        content = response.choices[0].message.content
+        if content is None:
+            raise ValueError("No content returned from model")
+        return content
+    

@@ -5,8 +5,8 @@ from collections import Counter
 
 
 class ScriptDirection(str, Enum):
-    LTR = "ltr"  # Latin, Cyrillic, etc.
-    RTL = "rtl"  # Arabic, Hebrew, etc.
+    LTR = "ltr"      # Latin, Cyrillic, etc.
+    RTL = "rtl"      # Arabic, Hebrew, etc.
     MIXED = "mixed"  # Both present significantly
     UNDETERMINED = "undetermined"
 
@@ -23,15 +23,15 @@ class ScriptFamily(str, Enum):
 class ScriptAnalysis:
     direction: ScriptDirection
     primary_script: ScriptFamily
-    ltr_ratio: float  # 0.0 to 1.0
-    rtl_ratio: float  # 0.0 to 1.0
+    ltr_ratio: float                # 0.0 to 1.0
+    rtl_ratio: float                # 0.0 to 1.0
     arabic_char_count: int
     latin_char_count: int
-    extended_latin_count: int  # Characters with diacritics beyond basic ASCII
+    extended_latin_count: int       # Characters with diacritics beyond basic ASCII
     has_diacritics: bool
-    sample_rtl_chars: str  # First few RTL characters found
-    sample_ltr_chars: str  # First few LTR characters found
-    detected_languages: list[str]  # Best-guess language hints
+    sample_rtl_chars: str           # First few RTL characters found
+    sample_ltr_chars: str           # First few LTR characters found
+    detected_languages: list[str]   # Best-guess language hints
 
 
 class ScriptDetector:

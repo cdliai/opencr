@@ -2,6 +2,7 @@ import json
 
 from ocr_pipeline.models.metadata import DocumentMetadata, PageMetadata
 from ocr_pipeline.services.output_writer import OutputWriter, PAGE_BREAK
+from ocr_pipeline.services.run_storage import RunStorage
 from ocr_pipeline.services.script_detector import (
     ScriptAnalysis,
     ScriptDirection,
@@ -62,7 +63,7 @@ def build_document() -> DocumentMetadata:
         filename="sample.pdf",
         file_path="/tmp/sample.pdf",
         file_size_bytes=2048,
-        file_sha256="abc123" * 10 + "ab",
+        file_sha256="abc123" * 10 + "abcd",
         total_pages=2,
         pdf_title="Sample",
         pdf_author="Tester",
@@ -92,11 +93,15 @@ def build_document() -> DocumentMetadata:
 
 
 def test_write_all_creates_raw_clean_markdown_and_metadata(tmp_path):
-    writer = OutputWriter()
+    storage = RunStorage(output_root=tmp_path, runs_root=tmp_path / "runs")
+    storage.ensure_run_dirs("run-test")
     document = build_document()
-    artifacts = writer.write_all(
-        output_dir=tmp_path,
-        filename=document.filename,
+    document_id = document.file_sha256[:16]
+    paths = storage.artifact_paths("run-test", document_id, document.filename)
+
+    writer = OutputWriter()
+    writer.write_all(
+        paths=paths,
         raw_pages_text=["raw page one", "raw page two"],
         clean_pages_text=["clean page one", "clean page two"],
         pages_metadata=document.pages,
@@ -104,11 +109,12 @@ def test_write_all_creates_raw_clean_markdown_and_metadata(tmp_path):
         doc_metadata=document,
     )
 
-    assert artifacts.raw_txt.read_text(encoding="utf-8") == f"raw page one{PAGE_BREAK}raw page two"
-    assert artifacts.clean_txt.read_text(encoding="utf-8") == f"clean page one{PAGE_BREAK}clean page two"
-    assert artifacts.markdown.exists()
-    assert artifacts.metadata.exists()
+    assert paths.raw_txt.read_text(encoding="utf-8") == f"raw page one{PAGE_BREAK}raw page two"
+    assert paths.clean_txt.read_text(encoding="utf-8") == f"clean page one{PAGE_BREAK}clean page two"
+    assert paths.markdown.exists()
+    assert paths.meta_json.exists()
 
-    metadata = json.loads(artifacts.metadata.read_text(encoding="utf-8"))
+    metadata = json.loads(paths.meta_json.read_text(encoding="utf-8"))
     assert metadata["file_sha256"] == document.file_sha256
     assert metadata["total_pages"] == 2
+    assert document_id in paths.markdown.name
