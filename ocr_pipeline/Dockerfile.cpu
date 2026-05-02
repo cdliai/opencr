@@ -1,0 +1,34 @@
+# CPU-only image: pipeline + in-process transformers backend.
+# No vLLM, no NVIDIA runtime needed. Builds on any host.
+#
+# Build context is the repo root (set by docker-compose.yml) so we can pull in
+# requirements-local.txt alongside the pipeline source.
+#
+# The image is ~3 GB because it bundles torch + transformers; the model
+# weights themselves (~6 GB) download on first request and cache to the
+# hf-cache volume.
+FROM python:3.12-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    poppler-utils \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY ocr_pipeline/requirements.txt /tmp/requirements.txt
+COPY requirements-local.txt /tmp/requirements-local.txt
+# `--extra-index-url` pulls the CPU-only torch wheel.
+RUN pip install --no-cache-dir \
+      --extra-index-url https://download.pytorch.org/whl/cpu \
+      -r /tmp/requirements.txt -r /tmp/requirements-local.txt
+
+COPY ocr_pipeline /app/ocr_pipeline/
+
+ENV PYTHONPATH=/app
+ENV MODEL_BACKEND=local
+ENV LOCAL_DEVICE=cpu
+
+EXPOSE 39672
+
+CMD ["uvicorn", "ocr_pipeline.main:app", "--host", "0.0.0.0", "--port", "39672"]
