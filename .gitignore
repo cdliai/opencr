@@ -14,3 +14,4 @@ output/
 model-cache/
 *.pdf
 !tests/fixtures/*.pdf
+.DS_Store
