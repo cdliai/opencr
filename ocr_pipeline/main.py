@@ -1,13 +1,15 @@
 import logging
+import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
 
 from ocr_pipeline.config import settings
-from ocr_pipeline.routers import health, extract, jobs, metrics, runs, ui
+from ocr_pipeline.routers import auth, health, extract, jobs, metrics, runs, ui
 from ocr_pipeline.services.db import init_database
 from ocr_pipeline.services.run_orchestrator import init_orchestrator
 from ocr_pipeline.services.run_storage import RunStorage
@@ -53,11 +55,23 @@ app = FastAPI(
     ),
     version=settings.pipeline_version,
     contact={"name": "cdli.ai", "url": "https://cdli.ai"},
-    license_info={"name": "© cdli.ai — All rights reserved."},
+    license_info={"name": "Apache-2.0", "url": "https://www.apache.org/licenses/LICENSE-2.0"},
     lifespan=lifespan,
 )
 
-for r in (health, extract, jobs, runs, metrics, ui):
+# A stable APP_SESSION_SECRET keeps users signed in across server restarts; an
+# empty value falls back to a per-process random secret which is fine for
+# development.
+_session_secret = settings.app_session_secret or secrets.token_hex(32)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=_session_secret,
+    session_cookie=settings.app_session_cookie,
+    same_site="lax",
+    https_only=False,
+)
+
+for r in (health, extract, jobs, runs, metrics, ui, auth):
     app.include_router(r.router)
 
 _static_dir = Path(__file__).parent / "static"

@@ -3,7 +3,7 @@ import json
 from io import BytesIO
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Path as PathParam, Query
+from fastapi import APIRouter, HTTPException, Path as PathParam, Query, Request
 from fastapi.responses import FileResponse, PlainTextResponse, Response, StreamingResponse
 
 from ocr_pipeline.config import settings
@@ -12,6 +12,7 @@ from ocr_pipeline.models.schemas import (
     RunCreateResponse, RunDetail, RunDocumentDetail, RunDocumentSummary,
     RunSummary, StagedDocumentInfo,
 )
+from ocr_pipeline.services.auth_session import is_oauth_enabled, session_token, session_user
 from ocr_pipeline.services.db import get_db
 from ocr_pipeline.services.hf_publisher import publish_run_to_hf
 from ocr_pipeline.services.pdf_renderer import PDFRenderer
@@ -282,11 +283,29 @@ async def stream_run(run_id: str = ID, after_event_id: int = 0):
 
 
 @router.post("/api/runs/{run_id}/publish/hf", response_model=HFPublishResponse)
-async def publish_to_hf(request: HFPublishRequest, run_id: str = ID):
+async def publish_to_hf(payload: HFPublishRequest, http_request: Request, run_id: str = ID):
     db = get_db()
     run = await _require_run(run_id)
     if run["status"] != "completed":
         raise HTTPException(status_code=409, detail="Run is not yet completed")
+
+    # Token resolution order:
+    #   1. signed-in user's HF OAuth token (preferred — tied to a real user)
+    #   2. token explicitly passed in the request body (paste-token mode)
+    #   3. HF_TOKEN env var (single-user / dev fallback, resolved inside publisher)
+    user = session_user(http_request.session) if hasattr(http_request, "session") else None
+    sess_tok = session_token(http_request.session) if user else None
+
+    # If OAuth is enabled and the user is signed in, ignore the body token —
+    # we don't want a session-bound request to hand off a different account's
+    # credentials. If OAuth is enabled and the user isn't signed in, refuse
+    # publishes entirely so the panel acts as a true gate.
+    if is_oauth_enabled():
+        if not sess_tok:
+            raise HTTPException(status_code=401, detail="Sign in with HuggingFace to publish.")
+        token = sess_tok
+    else:
+        token = payload.token
 
     documents = await db.list_run_documents(run_id)
     try:
@@ -294,10 +313,10 @@ async def publish_to_hf(request: HFPublishRequest, run_id: str = ID):
             run=run,
             documents=documents,
             dataset_dir=settings.runs_dir / run_id / "dataset",
-            repo_id=request.repo_id,
-            private=request.private,
-            token=request.token,
-            commit_message=request.commit_message,
+            repo_id=payload.repo_id,
+            private=payload.private,
+            token=token,
+            commit_message=payload.commit_message,
         )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
