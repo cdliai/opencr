@@ -34,7 +34,18 @@ async def wait_for_model_server() -> bool:
     """
     Block until the model server is healthy and can list its model.
     Called once at pipeline startup. Returns True if ready, False if timed out.
+
+    For the in-process `local` backend there is nothing to wait for — the model
+    loads lazily on the first request — so we mark ready immediately.
     """
+    if settings.is_local_backend:
+        model_readiness.ready = True
+        model_readiness.model_name = settings.model_name
+        model_readiness.error = None
+        model_readiness.checked_at = time.time()
+        logger.info("Local backend selected; model will load on first request.")
+        return True
+
     base = settings.model_server_url
     timeout = settings.model_ready_timeout
     interval = settings.model_ready_interval
