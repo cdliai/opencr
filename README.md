@@ -34,7 +34,7 @@ Open http://localhost:39672. Drop PDFs in `./input/`, hit **Start OCR run**.
 For local development, demos, and small jobs on a Mac or Linux box with no GPU.
 
 ```bash
-git clone https://github.com/cdli-ai/opencr.git
+git clone https://github.com/cdliai/opencr.git
 cd opencr
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r ocr_pipeline/requirements.txt -r requirements-local.txt

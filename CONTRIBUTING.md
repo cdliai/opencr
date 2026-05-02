@@ -27,7 +27,7 @@ that improves throughput on a target platform.
 ## Setup
 
 ```bash
-git clone https://github.com/cdli-ai/opencr.git
+git clone https://github.com/cdliai/opencr.git
 cd opencr
 make install
 make test
