@@ -123,4 +123,16 @@ const API = {
     }
     return res.json();
   },
+
+  async authMe() {
+    const res = await fetch('/api/auth/me');
+    if (!res.ok) return { enabled: false, authenticated: false, user: null };
+    return res.json();
+  },
+
+  async authLogout() {
+    const res = await fetch('/api/auth/logout', { method: 'POST' });
+    if (!res.ok) throw new Error('Logout failed');
+    return res.json();
+  },
 };
