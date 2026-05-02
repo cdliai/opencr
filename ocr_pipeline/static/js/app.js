@@ -26,6 +26,8 @@ function opencrApp() {
     healthClass: '',
     metrics: {},
 
+    auth: { enabled: false, authenticated: false, user: null },
+
     runs: [],
     selectedRunId: null,
     selectedRun: null,
@@ -49,9 +51,32 @@ function opencrApp() {
         this.refreshMetrics(),
         this.refreshInputFiles(),
         this.refreshRuns(),
+        this.refreshAuth(),
       ]);
       setInterval(() => this.refreshHealth(), 15000);
       setInterval(() => this.refreshMetrics(), 10000);
+    },
+
+    async refreshAuth() {
+      try { this.auth = await API.authMe(); } catch { this.auth = { enabled: false, authenticated: false, user: null }; }
+    },
+
+    signIn() { window.location.href = '/api/auth/login'; },
+
+    async signOut() {
+      try {
+        await API.authLogout();
+        await this.refreshAuth();
+        this.toast('Signed out', 'info');
+      } catch (e) {
+        this.toast(`Sign out failed: ${e.message}`, 'error');
+      }
+    },
+
+    get canPublish() {
+      // OAuth disabled → publish is always available (paste-token mode).
+      // OAuth enabled  → publish requires a signed-in user.
+      return !this.auth.enabled || this.auth.authenticated;
     },
 
     async refreshHealth() {
@@ -254,7 +279,14 @@ function opencrApp() {
 
     openHFModal() {
       if (!this.selectedRunId) return;
-      this.hfModal = { ...emptyHFModal(), open: true, runId: this.selectedRunId };
+      if (!this.canPublish) {
+        this.toast('Sign in with HuggingFace to publish.', 'error');
+        return;
+      }
+      const defaultRepo = this.auth.user?.name
+        ? `${this.auth.user.name}/${this.selectedRun?.name || `opencr-${this.selectedRunId}`}`
+        : '';
+      this.hfModal = { ...emptyHFModal(), open: true, runId: this.selectedRunId, repoId: defaultRepo };
     },
 
     closeHFModal() { this.hfModal.open = false; },

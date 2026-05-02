@@ -33,6 +33,16 @@
       <span class="health-dot" :class="healthClass"></span>
       <span class="status-text" x-text="healthStatus"></span>
     </div>
+    <div class="auth-cluster" x-show="auth.enabled">
+      <button class="btn btn-ghost btn-sm" x-show="!auth.authenticated" @click="signIn">
+        🤗 Sign in with HuggingFace
+      </button>
+      <div class="auth-user" x-show="auth.authenticated">
+        <img class="auth-avatar" :src="auth.user?.picture" :alt="auth.user?.name" x-show="auth.user?.picture">
+        <span class="auth-name" x-text="auth.user?.name"></span>
+        <button class="btn btn-ghost btn-sm" @click="signOut">Sign out</button>
+      </div>
+    </div>
   </div>
 </header>
 
@@ -195,9 +205,16 @@
         <button class="btn btn-ghost" @click="downloadDataset" x-show="selectedRun?.dataset_bundle">
           ↓ Dataset bundle (zip)
         </button>
-        <button class="btn btn-primary" @click="openHFModal" x-show="selectedRun?.dataset_bundle">
+        <button class="btn btn-primary"
+                @click="openHFModal"
+                :disabled="!canPublish"
+                x-show="selectedRun?.dataset_bundle"
+                :title="canPublish ? 'Publish this run as a HuggingFace dataset' : 'Sign in with HuggingFace to publish'">
           🤗 Publish to HuggingFace
         </button>
+        <p class="muted-note" x-show="selectedRun?.dataset_bundle && !canPublish">
+          Publishing requires sign-in.
+        </p>
       </section>
 
       <section class="documents-grid">
@@ -306,15 +323,18 @@
         <span>Repo id</span>
         <input type="text" placeholder="username/dataset-name" x-model="hfModal.repoId">
       </label>
-      <label class="field">
+      <label class="field" x-show="!auth.enabled">
         <span>HF token (optional, uses HF_TOKEN env if blank)</span>
         <input type="password" placeholder="hf_..." x-model="hfModal.token">
       </label>
+      <p class="muted-note" x-show="auth.enabled && auth.authenticated">
+        Publishing as <strong x-text="auth.user?.name"></strong> using your HuggingFace session token.
+      </p>
       <label class="checkbox-row">
         <input type="checkbox" x-model="hfModal.private">
         <span>Private repository</span>
       </label>
-      <p class="muted-note">A README.md dataset card and `pages.parquet` / `documents.parquet` files will be uploaded.</p>
+      <p class="muted-note">A README.md dataset card and `pages.parquet` / `documents.parquet` files will be uploaded. Your dataset will be tagged <code>opencr</code> for community discovery.</p>
     </div>
     <div class="modal-body" x-show="hfModal.result">
       <p>Published successfully.</p>
@@ -342,11 +362,11 @@
 </div>
 
 <footer class="appfoot">
-  <span>OpenCR — open source.</span>
+  <span>OpenCR — open source (Apache-2.0).</span>
   <span class="appfoot-sep">·</span>
   <span>Made by <a href="https://cdli.ai" target="_blank" rel="noopener">cdli.ai</a></span>
   <span class="appfoot-sep">·</span>
-  <span>© cdli.ai · All rights reserved.</span>
+  <span><a href="https://github.com/cdli-ai/opencr" target="_blank" rel="noopener">GitHub</a></span>
 </footer>
 
 </body>
