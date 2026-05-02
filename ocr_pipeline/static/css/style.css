@@ -533,3 +533,9 @@ input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent);
   .run-summary { grid-template-columns: repeat(2, 1fr); }
   .toast-container { right: 10px; left: 10px; }
 }
+
+/* ---------------- auth cluster ---------------- */
+.auth-cluster { display: flex; align-items: center; gap: 10px; margin-left: 16px; }
+.auth-user { display: flex; align-items: center; gap: 8px; }
+.auth-avatar { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; }
+.auth-name { font-size: 0.82rem; font-weight: 600; color: var(--fg); }

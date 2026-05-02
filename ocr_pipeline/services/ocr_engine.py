@@ -1,5 +1,21 @@
+"""OCR engine abstraction.
+
+Two backends ship today:
+
+- `RemoteOCREngine` calls any OpenAI-compatible `/v1/chat/completions` endpoint
+  (vLLM serving DeepSeek-OCR is the production target; remote endpoints like
+  OpenRouter or a self-hosted shim work the same way).
+- `LocalOCREngine` runs DeepSeek-OCR in-process via `transformers`. Slow but
+  needs no GPU server — used for Apple Silicon / CPU development.
+
+Pick a backend with the `MODEL_BACKEND` env var. `OCREngine()` returns the
+right instance based on `settings.model_backend`.
+"""
+from __future__ import annotations
+
 import base64
 from io import BytesIO
+from typing import Protocol
 
 from openai import AsyncOpenAI
 from PIL import Image
@@ -13,24 +29,41 @@ PROMPTS = {
 }
 
 
-class OCREngine:
+class _OCREngineProtocol(Protocol):
+    async def extract_page(
+        self,
+        image: Image.Image,
+        mode: str = "markdown",
+        ngram_size: int | None = None,
+        window_size: int | None = None,
+    ) -> str: ...
+
+
+def _image_to_base64(image: Image.Image) -> str:
+    buf = BytesIO()
+    image.save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode("utf-8")
+
+
+class RemoteOCREngine:
+    """Talks to any OpenAI-compatible vision endpoint."""
+
     def __init__(
         self,
         base_url: str | None = None,
         model_name: str | None = None,
+        api_key: str | None = None,
     ):
         self.model_name = model_name or settings.model_name
         self.client = AsyncOpenAI(
-            api_key="EMPTY",
+            api_key=api_key or settings.model_api_key or "EMPTY",
             base_url=f"{base_url or settings.model_server_url}/v1",
             timeout=settings.model_timeout,
         )
 
     @staticmethod
     def image_to_base64(image: Image.Image) -> str:
-        buf = BytesIO()
-        image.save(buf, format="PNG")
-        return base64.b64encode(buf.getvalue()).decode("utf-8")
+        return _image_to_base64(image)
 
     async def extract_page(
         self,
@@ -39,8 +72,19 @@ class OCREngine:
         ngram_size: int | None = None,
         window_size: int | None = None,
     ) -> str:
-        image_b64 = self.image_to_base64(image)
         prompt_text = PROMPTS.get(mode, PROMPTS["markdown"])
+        image_b64 = _image_to_base64(image)
+
+        # vLLM-specific knobs go in extra_body. Generic OpenAI servers will
+        # ignore unknown extra_body keys.
+        extra_body = {
+            "skip_special_tokens": False,
+            "vllm_xargs": {
+                "ngram_size": ngram_size or settings.ngram_size,
+                "window_size": window_size or settings.window_size,
+                "whitelist_token_ids": settings.whitelist_token_ids,
+            },
+        }
 
         response = await self.client.chat.completions.create(
             model=self.model_name,
@@ -48,32 +92,29 @@ class OCREngine:
                 {
                     "role": "user",
                     "content": [
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/png;base64,{image_b64}"
-                            },
-                        },
-                        {
-                            "type": "text",
-                            "text": prompt_text,
-                        },
+                        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_b64}"}},
+                        {"type": "text", "text": prompt_text},
                     ],
                 }
             ],
             max_tokens=settings.max_tokens,
             temperature=settings.temperature,
-            extra_body={
-                "skip_special_tokens": False,
-                "vllm_xargs": {
-                    "ngram_size": ngram_size or settings.ngram_size,
-                    "window_size": window_size or settings.window_size,
-                    "whitelist_token_ids": settings.whitelist_token_ids,
-                },
-            },
+            extra_body=extra_body,
         )
         content = response.choices[0].message.content
         if content is None:
             raise ValueError("No content returned from model")
         return content
-    
+
+
+def OCREngine(*args, **kwargs) -> _OCREngineProtocol:
+    """Factory. Returns the engine matching `settings.model_backend`.
+
+    Existing callers do `OCREngine()` so we keep this name as a callable.
+    """
+    if settings.is_local_backend:
+        # Imported lazily so projects without the local extras (transformers,
+        # torch) can still use the remote backend without import errors.
+        from ocr_pipeline.services.local_ocr_engine import LocalOCREngine
+        return LocalOCREngine(*args, **kwargs)
+    return RemoteOCREngine(*args, **kwargs)

@@ -38,7 +38,7 @@ def _build_dataset_card(
         "license: cc-by-4.0\n"
         "task_categories:\n  - text-generation\n  - feature-extraction\n"
         f"language:\n{yaml_lang_block}\n"
-        "tags:\n  - ocr\n  - opencr\n  - cdli-ai\n  - deepseek-ocr\n  - pdf\n"
+        "tags:\n  - ocr\n  - opencr\n  - cdliai\n  - deepseek-ocr\n  - pdf\n"
         f"size_categories:\n  - {_size_bucket(totals['pages'])}\n"
         "---\n"
     )
