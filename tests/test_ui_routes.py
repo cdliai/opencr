@@ -174,4 +174,6 @@ def test_home_uses_document_workbench():
     assert "retryRun()" in app_js
     assert "Retry incomplete" in html
     assert "selectedPageText()" in app_js
+    assert "currentPageQualityFlags()" in app_js
+    assert "Quality flags" in html
     assert "saveSelectedDocument()" in app_js

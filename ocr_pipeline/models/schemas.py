@@ -211,6 +211,7 @@ class PageSummary(BaseModel):
     page_num: int
     status: str
     validation_issues: list[str] = Field(default_factory=list)
+    quality_flags: list[str] = Field(default_factory=list)
     script_direction: Optional[str] = None
     primary_script: Optional[str] = None
     detected_languages: list[str] = Field(default_factory=list)

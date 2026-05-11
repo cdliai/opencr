@@ -74,6 +74,7 @@ class RunOrchestrator:
         document_id = sha[:16]
         canonical = self.storage.source_pdf_path(document_id)
         existing = await self.db.get_document_by_sha(sha)
+        filename = existing["filename"] if existing else file_path.name
 
         if not canonical.exists():
             self.storage.sources_dir().mkdir(parents=True, exist_ok=True)
@@ -87,7 +88,7 @@ class RunOrchestrator:
 
         await self.db.upsert_document(
             document_id,
-            filename=file_path.name,
+            filename=filename,
             source_path=str(canonical),
             file_sha256=sha,
             file_size_bytes=size,
@@ -97,7 +98,7 @@ class RunOrchestrator:
         return StagedDocument(
             document_id=document_id,
             file_sha256=sha,
-            filename=file_path.name,
+            filename=filename,
             source_path=canonical,
             deduped=existing is not None,
             estimated_pages=page_count,
@@ -268,6 +269,7 @@ class RunOrchestrator:
                     run_id=run_id,
                     document_id=staged.document_id,
                     file_sha256=staged.file_sha256,
+                    filename=staged.filename,
                     artifact_paths=paths,
                 )
                 documents_meta.append((staged.document_id, paths, doc_meta))

@@ -130,6 +130,7 @@ def _page_summary(row: dict) -> PageSummary:
         page_num=row["page_num"],
         status=row["status"],
         validation_issues=_parse_str_list(row.get("validation_issues")),
+        quality_flags=_parse_str_list(row.get("quality_flags")),
         script_direction=row.get("script_direction"),
         primary_script=row.get("primary_script"),
         detected_languages=_parse_str_list(row.get("detected_languages")),

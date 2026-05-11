@@ -43,6 +43,10 @@ DOCUMENT_METADATA_COLUMNS = {
     "catalog_updated_at": "TEXT",
 }
 
+PAGE_METADATA_COLUMNS = {
+    "quality_flags": "TEXT",
+}
+
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
@@ -138,6 +142,7 @@ CREATE TABLE IF NOT EXISTS pages (
     extraction_mode TEXT,
     extraction_attempt INTEGER,
     dpi_used INTEGER,
+    quality_flags TEXT,
     has_embedded_text INTEGER,
     is_image_only INTEGER,
     PRIMARY KEY (run_id, document_id, page_num),
@@ -204,12 +209,16 @@ class Database:
 
     async def _migrate(self) -> None:
         """Apply additive migrations for existing local SQLite catalogs."""
-        async with self.conn.execute("PRAGMA table_info(documents)") as cur:
+        await self._ensure_columns("documents", DOCUMENT_METADATA_COLUMNS)
+        await self._ensure_columns("pages", PAGE_METADATA_COLUMNS)
+
+    async def _ensure_columns(self, table: str, columns: dict[str, str]) -> None:
+        async with self.conn.execute(f"PRAGMA table_info({table})") as cur:
             existing = {row["name"] for row in await cur.fetchall()}
-        for name, column_type in DOCUMENT_METADATA_COLUMNS.items():
+        for name, column_type in columns.items():
             if name not in existing:
                 await self.conn.execute(
-                    f"ALTER TABLE documents ADD COLUMN {name} {column_type}"
+                    f"ALTER TABLE {table} ADD COLUMN {name} {column_type}"
                 )
 
     @asynccontextmanager
@@ -608,11 +617,12 @@ class Database:
             "extraction_mode": None,
             "extraction_attempt": None,
             "dpi_used": None,
+            "quality_flags": None,
             "has_embedded_text": None,
             "is_image_only": None,
         }
         defaults.update(fields)
-        for list_key in ("validation_issues", "detected_languages"):
+        for list_key in ("validation_issues", "detected_languages", "quality_flags"):
             v = defaults.get(list_key)
             if isinstance(v, list):
                 defaults[list_key] = json.dumps(v, ensure_ascii=False)

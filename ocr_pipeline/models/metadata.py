@@ -44,6 +44,7 @@ class PageMetadata:
     page_height: float
     image_count: int
     estimated_complexity: str
+    quality_flags: list[str] = field(default_factory=list)
 
 
 @dataclass

@@ -65,12 +65,14 @@ def test_text_bundle_export_writes_raw_clean_text_and_jsonl(tmp_path):
 
     clean_files = list((result.export_dir / "clean").glob("*.txt"))
     raw_files = list((result.export_dir / "raw").glob("*.txt"))
+    normalized_files = list((result.export_dir / "normalized").glob("*.txt"))
     assert clean_files[0].read_text(encoding="utf-8") == paths.clean_txt.read_text(
         encoding="utf-8"
     )
     assert raw_files[0].read_text(encoding="utf-8") == paths.raw_txt.read_text(
         encoding="utf-8"
     )
+    assert normalized_files[0].exists()
 
     page_rows = _rows(result.export_dir / "pages.jsonl")
     assert [row["clean_text"] for row in page_rows] == [
@@ -78,6 +80,7 @@ def test_text_bundle_export_writes_raw_clean_text_and_jsonl(tmp_path):
         "clean page two",
     ]
     assert page_rows[0]["raw_text"] == "raw page one"
+    assert page_rows[0]["normalized_text"] == "clean page one"
     assert page_rows[0]["group_path"] == "Ottoman/Sample"
     assert page_rows[0]["language"] == ["ota-Latn", "tr"]
     assert page_rows[1]["extraction_mode"] == "free_ocr"
@@ -85,6 +88,7 @@ def test_text_bundle_export_writes_raw_clean_text_and_jsonl(tmp_path):
     document_rows = _rows(result.export_dir / "documents.jsonl")
     assert document_rows[0]["clean_file"].startswith("clean/")
     assert document_rows[0]["raw_file"].startswith("raw/")
+    assert document_rows[0]["normalized_file"].startswith("normalized/")
 
     manifest = json.loads((result.export_dir / "manifest.json").read_text("utf-8"))
     assert manifest["export_type"] == "text_bundle"
@@ -97,6 +101,9 @@ def test_text_bundle_export_writes_raw_clean_text_and_jsonl(tmp_path):
     assert "documents.jsonl" in names
     assert any(name.startswith("clean/") and name.endswith(".txt") for name in names)
     assert any(name.startswith("raw/") and name.endswith(".txt") for name in names)
+    assert any(
+        name.startswith("normalized/") and name.endswith(".txt") for name in names
+    )
 
 
 def test_text_bundle_export_can_filter_selected_documents(tmp_path):
@@ -153,3 +160,69 @@ def test_text_bundle_export_can_filter_selected_documents(tmp_path):
     assert result.documents_count == 1
     assert result.pages_count == 2
     assert {row["document_id"] for row in rows} == {"doc-a"}
+
+
+def test_text_bundle_prefers_catalog_title_for_file_names(tmp_path):
+    raw = tmp_path / "raw.txt"
+    clean = tmp_path / "clean.txt"
+    raw.write_text("raw", encoding="utf-8")
+    clean.write_text("clean", encoding="utf-8")
+
+    result = TextBundleExporter(tmp_path / "text_bundle").export_run(
+        run={"id": "run-title", "model_used": "model", "pipeline_version": "2.0.0"},
+        documents=[
+            {
+                "document_id": "0ff5673dc9672d0e",
+                "document_filename": "0ff5673dc9672d0e.pdf",
+                "status": "completed",
+                "total_pages": 1,
+                "file_sha256": "sha",
+                "artifact_raw_txt": str(raw),
+                "artifact_clean_txt": str(clean),
+            }
+        ],
+        pages_by_document={"0ff5673dc9672d0e": [{"page_num": 1}]},
+        catalog_by_document={
+            "0ff5673dc9672d0e": {
+                "display_title": "YUNANİSTAN'LA BARIŞ ANDLAŞMASI"
+            }
+        },
+    )
+
+    row = _rows(result.export_dir / "documents.jsonl")[0]
+    assert row["clean_file"].startswith("clean/YUNANİSTAN_LA_BARIŞ_ANDLAŞMASI")
+    assert not row["clean_file"].startswith("clean/0ff5673dc9672d0e")
+
+
+def test_text_bundle_exports_page_quality_flags(tmp_path):
+    raw = tmp_path / "raw.txt"
+    clean = tmp_path / "clean.txt"
+    raw.write_text("raw", encoding="utf-8")
+    clean.write_text("clean", encoding="utf-8")
+
+    result = TextBundleExporter(tmp_path / "text_bundle").export_run(
+        run={"id": "run-quality", "model_used": "model", "pipeline_version": "2.0.0"},
+        documents=[
+            {
+                "document_id": "doc-quality",
+                "document_filename": "doc.pdf",
+                "status": "completed",
+                "total_pages": 1,
+                "file_sha256": "sha",
+                "artifact_raw_txt": str(raw),
+                "artifact_clean_txt": str(clean),
+            }
+        ],
+        pages_by_document={
+            "doc-quality": [
+                {
+                    "page_num": 1,
+                    "quality_flags": '["line_hyphenation", "markup_leak"]',
+                }
+            ]
+        },
+        catalog_by_document={"doc-quality": {}},
+    )
+
+    row = _rows(result.export_dir / "pages.jsonl")[0]
+    assert row["quality_flags"] == ["line_hyphenation", "markup_leak"]

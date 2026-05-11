@@ -10,6 +10,7 @@ from pathlib import Path
 from ocr_pipeline.config import settings
 from ocr_pipeline.services.dataset_exporter import PROJECT_METADATA
 from ocr_pipeline.services.output_writer import PAGE_BREAK
+from ocr_pipeline.services.text_normalizer import TextNormalizer
 
 
 @dataclass(frozen=True)
@@ -25,6 +26,7 @@ class TextBundleExporter:
 
     def __init__(self, export_dir: Path):
         self.export_dir = export_dir
+        self.normalizer = TextNormalizer()
 
     @staticmethod
     def _read_text(path_str: str | None) -> str:
@@ -67,7 +69,7 @@ class TextBundleExporter:
     @staticmethod
     def _file_stem(filename: str, document_id: str) -> str:
         stem = Path(filename or document_id).stem or document_id
-        safe = re.sub(r"[^A-Za-z0-9._-]+", "_", stem).strip("._-")
+        safe = re.sub(r"[^\w.-]+", "_", stem).strip("._-")
         return f"{safe or 'document'}__{document_id[:8]}"
 
     def export_run(
@@ -86,8 +88,10 @@ class TextBundleExporter:
         )
         clean_dir = tmp_path / "clean"
         raw_dir = tmp_path / "raw"
+        normalized_dir = tmp_path / "normalized"
         clean_dir.mkdir()
         raw_dir.mkdir()
+        normalized_dir.mkdir()
 
         page_rows: list[dict] = []
         document_rows: list[dict] = []
@@ -106,27 +110,45 @@ class TextBundleExporter:
             )
             raw_text = self._read_text(doc.get("artifact_raw_txt"))
             clean_text = self._read_text(doc.get("artifact_clean_txt"))
+            normalized_text = self.normalizer.normalize_for_nlp(clean_text)
             if not raw_text and not clean_text:
                 continue
 
-            stem = self._file_stem(doc.get("document_filename") or "", document_id)
+            catalog = catalog_by_document.get(document_id, {})
+            display_name = (
+                catalog.get("display_title")
+                or catalog.get("title")
+                or doc.get("document_filename")
+                or ""
+            )
+            stem = self._file_stem(display_name, document_id)
             raw_rel = f"raw/{stem}.txt"
             clean_rel = f"clean/{stem}.txt"
+            normalized_rel = f"normalized/{stem}.txt"
             (tmp_path / raw_rel).write_text(raw_text, encoding="utf-8")
             (tmp_path / clean_rel).write_text(clean_text, encoding="utf-8")
+            (tmp_path / normalized_rel).write_text(
+                normalized_text, encoding="utf-8"
+            )
 
             raw_pages = self._split_pages(raw_text, total_pages)
             clean_pages = self._split_pages(clean_text, total_pages)
+            normalized_pages = [
+                self.normalizer.normalize_for_nlp(page) for page in clean_pages
+            ]
             page_meta = {
                 row["page_num"]: row for row in pages_by_document.get(document_id, [])
             }
-            catalog = catalog_by_document.get(document_id, {})
             language = self._language_list(catalog.get("language"))
+            document_quality_flags: set[str] = set()
 
             for page_num in range(1, total_pages + 1):
                 meta = page_meta.get(page_num, {})
                 page_raw = raw_pages[page_num - 1]
                 page_clean = clean_pages[page_num - 1]
+                page_normalized = normalized_pages[page_num - 1]
+                quality_flags = self._json_list(meta.get("quality_flags"))
+                document_quality_flags.update(quality_flags)
                 page_rows.append(
                     {
                         "id": f"{document_id}_page_{page_num:04d}",
@@ -150,9 +172,14 @@ class TextBundleExporter:
                         "page": page_num,
                         "raw_text": page_raw,
                         "clean_text": page_clean,
+                        "normalized_text": page_normalized,
                         "raw_text_sha256": self._text_sha256(page_raw),
                         "clean_text_sha256": self._text_sha256(page_clean),
+                        "normalized_text_sha256": self._text_sha256(
+                            page_normalized
+                        ),
                         "ocr_status": meta.get("status"),
+                        "quality_flags": quality_flags,
                         "validation_issues": self._json_list(
                             meta.get("validation_issues")
                         ),
@@ -184,8 +211,11 @@ class TextBundleExporter:
                     "page_count": total_pages,
                     "raw_file": raw_rel,
                     "clean_file": clean_rel,
+                    "normalized_file": normalized_rel,
                     "raw_text_sha256": self._text_sha256(raw_text),
                     "clean_text_sha256": self._text_sha256(clean_text),
+                    "normalized_text_sha256": self._text_sha256(normalized_text),
+                    "quality_flags": sorted(document_quality_flags),
                     "source_pdf_sha256": doc.get("file_sha256"),
                     "ocr_model": run.get("model_used") or settings.model_name,
                     "pipeline_version": run.get("pipeline_version")
@@ -237,6 +267,7 @@ class TextBundleExporter:
             "artifacts": {
                 "clean_text_dir": "clean/",
                 "raw_text_dir": "raw/",
+                "normalized_text_dir": "normalized/",
                 "pages_jsonl": "pages.jsonl",
                 "documents_jsonl": "documents.jsonl",
             },

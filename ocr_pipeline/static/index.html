@@ -355,6 +355,21 @@
         <span>OCR snapshot</span>
         <code x-text="`page ${inspector.pageNum}`"></code>
       </div>
+      <div class="page-quality"
+           x-show="currentPageQualityFlags().length || currentPageIssues().length">
+        <div x-show="currentPageQualityFlags().length">
+          <span>Quality flags</span>
+          <template x-for="flag in currentPageQualityFlags()" :key="flag">
+            <code x-text="flag"></code>
+          </template>
+        </div>
+        <div x-show="currentPageIssues().length">
+          <span>Issues</span>
+          <template x-for="issue in currentPageIssues()" :key="issue">
+            <code x-text="issue"></code>
+          </template>
+        </div>
+      </div>
       <pre x-text="selectedPageText() || '(empty)'"></pre>
     </div>
 

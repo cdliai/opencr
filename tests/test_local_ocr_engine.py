@@ -1,4 +1,6 @@
 import asyncio
+import logging
+import warnings
 
 import pytest
 from PIL import Image
@@ -97,3 +99,29 @@ def test_local_infer_suppresses_remote_model_stdout(capsys):
 
     assert result == "recognized text"
     assert "remote model debug noise" not in capsys.readouterr().out
+
+
+def test_local_infer_suppresses_repeated_generation_noise(capsys, caplog):
+    LocalOCREngine._instance = None
+    engine = LocalOCREngine()
+    engine._tokenizer = object()
+
+    class FakeModel:
+        def infer(self, tokenizer, **kwargs):
+            warnings.warn(
+                "`do_sample` is set to `False`. However, `temperature` is set to `0.0`",
+                stacklevel=1,
+            )
+            logging.getLogger("transformers.generation.utils").warning(
+                "The attention mask and the pad token id were not set."
+            )
+            return "recognized text"
+
+    engine._model = FakeModel()
+
+    with caplog.at_level(logging.WARNING):
+        result = engine._infer_blocking(Image.new("RGB", (8, 8)), "<image>\nFree OCR.")
+
+    assert result == "recognized text"
+    assert "temperature" not in capsys.readouterr().err
+    assert "attention mask" not in caplog.text

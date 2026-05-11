@@ -216,6 +216,19 @@ function opencrApp() {
       return parts[this.inspector.pageNum - 1] || '';
     },
 
+    currentPageMeta() {
+      return (this.inspector.document?.pages || [])
+        .find(p => p.page_num === this.inspector.pageNum) || null;
+    },
+
+    currentPageQualityFlags() {
+      return this.currentPageMeta()?.quality_flags || [];
+    },
+
+    currentPageIssues() {
+      return this.currentPageMeta()?.validation_issues || [];
+    },
+
     pageStatusFor(pageNum) {
       return (this.inspector.document?.pages || []).find(p => p.page_num === pageNum)?.status || 'pending';
     },

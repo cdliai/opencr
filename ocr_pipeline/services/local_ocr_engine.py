@@ -21,7 +21,8 @@ import asyncio
 import io
 import logging
 import tempfile
-from contextlib import redirect_stdout
+import warnings
+from contextlib import contextmanager, redirect_stdout
 from importlib.util import find_spec
 from pathlib import Path
 from typing import Any
@@ -39,6 +40,12 @@ LOCAL_PROMPTS = {
     "free_ocr": "<image>\nFree OCR.",
     "figure": "<image>\nParse the figure.",
 }
+
+NOISY_GENERATION_MESSAGES = (
+    r"`do_sample` is set to `False`.*`temperature` is set",
+    r"The attention mask and the pad token id were not set",
+    r"Setting `pad_token_id` to `eos_token_id`",
+)
 
 
 def _resolve_device(requested: str) -> str:
@@ -88,6 +95,26 @@ def _resolve_attn_implementation(requested: str, device: str) -> str:
     if device == "cuda" and find_spec("flash_attn") is not None:
         return "flash_attention_2"
     return "eager"
+
+
+@contextmanager
+def _quiet_generation_noise():
+    """Hide repeated Transformers generation warnings emitted by remote code."""
+    noisy_loggers = [
+        logging.getLogger("transformers.generation.utils"),
+        logging.getLogger("transformers.generation.configuration_utils"),
+    ]
+    previous_disabled = [logger.disabled for logger in noisy_loggers]
+    with warnings.catch_warnings():
+        for message in NOISY_GENERATION_MESSAGES:
+            warnings.filterwarnings("ignore", message=message)
+        for logger in noisy_loggers:
+            logger.disabled = True
+        try:
+            yield
+        finally:
+            for logger, disabled in zip(noisy_loggers, previous_disabled):
+                logger.disabled = disabled
 
 
 class LocalOCREngine:
@@ -209,7 +236,7 @@ class LocalOCREngine:
             image.save(image_path, format="PNG")
 
             remote_stdout = io.StringIO()
-            with redirect_stdout(remote_stdout):
+            with redirect_stdout(remote_stdout), _quiet_generation_noise():
                 try:
                     result = self._model.infer(
                         self._tokenizer,

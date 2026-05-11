@@ -70,6 +70,7 @@ class MetadataCollector:
             page_height=page_profile.height,
             image_count=page_profile.image_count,
             estimated_complexity=page_profile.estimated_complexity,
+            quality_flags=validation_result.metrics.get("quality_flags", []),
         )
 
     def extract_pdf_metadata(self, pdf_path: Path) -> dict:
