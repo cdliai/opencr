@@ -31,9 +31,20 @@ mkdir -p "$INPUT_DIR" "$OUTPUT_DIR"
 export PYTHONPATH="${PYTHONPATH:-}:$(pwd)"
 PORT="${PORT:-39672}"
 HOST="${HOST:-0.0.0.0}"
+if [[ -z "${PYTHON_BIN:-}" && -x ".venv/bin/python" ]]; then
+  PYTHON_BIN=".venv/bin/python"
+else
+  PYTHON_BIN="${PYTHON_BIN:-python3}"
+fi
 
 echo "→ OpenCR  backend=$MODEL_BACKEND  http://$HOST:$PORT"
 echo "  input=$INPUT_DIR"
 echo "  output=$OUTPUT_DIR"
+echo "  python=$PYTHON_BIN"
 
-exec python3 -m uvicorn ocr_pipeline.main:app --host "$HOST" --port "$PORT" "$@"
+UVICORN_ARGS=()
+if [[ "${ACCESS_LOG:-0}" != "1" ]]; then
+  UVICORN_ARGS+=(--no-access-log)
+fi
+
+exec "$PYTHON_BIN" -m uvicorn ocr_pipeline.main:app --host "$HOST" --port "$PORT" "${UVICORN_ARGS[@]}" "$@"

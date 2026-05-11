@@ -59,6 +59,7 @@ class Settings(BaseSettings):
     # Server
     host: str = "0.0.0.0"
     port: int = 39672
+    log_level: str = "INFO"
 
     # Pipeline
     pipeline_version: str = "2.0.0"

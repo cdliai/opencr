@@ -97,29 +97,41 @@ class LocalOCREngine:
         self._device: str | None = None
         self._dtype: Any = None
         self._lock = asyncio.Lock()
+        self._load_error: BaseException | None = None
         self._initialized = True
 
     async def _ensure_loaded(self) -> None:
         if self._model is not None:
             return
+        if self._load_error is not None:
+            raise RuntimeError("Local OCR engine failed to load") from self._load_error
         async with self._lock:
             if self._model is not None:
                 return
-            await asyncio.to_thread(self._load_blocking)
+            if self._load_error is not None:
+                raise RuntimeError(
+                    "Local OCR engine failed to load"
+                ) from self._load_error
+            try:
+                await asyncio.to_thread(self._load_blocking)
+            except Exception as exc:
+                self._load_error = exc
+                logger.error("Local OCR engine failed to load: %s", exc)
+                raise
 
     def _load_blocking(self) -> None:
-        if find_spec("torch") is None:
+        missing = [
+            package
+            for package in ("torch", "transformers", "easydict")
+            if find_spec(package) is None
+        ]
+        if missing:
             raise RuntimeError(
-                "MODEL_BACKEND=local requires `transformers` and `torch`. "
-                "Install with: pip install -r requirements-local.txt"
+                "MODEL_BACKEND=local missing package(s): "
+                f"{', '.join(missing)}. Install with: "
+                "pip install -r ocr_pipeline/requirements.txt -r requirements-local.txt"
             )
-        try:
-            from transformers import AutoModel, AutoTokenizer
-        except ImportError as exc:
-            raise RuntimeError(
-                "MODEL_BACKEND=local requires `transformers` and `torch`. "
-                "Install with: pip install -r requirements-local.txt"
-            ) from exc
+        from transformers import AutoModel, AutoTokenizer
 
         device = _resolve_device(settings.local_device)
         dtype = _resolve_dtype(settings.local_dtype, device)

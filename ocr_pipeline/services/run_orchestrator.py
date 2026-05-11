@@ -133,6 +133,13 @@ class RunOrchestrator:
         for s in staged:
             await self.db.link_run_document(run_id, s.document_id, status="pending")
 
+        logger.info(
+            "run=%s queued docs=%d pages=%d name=%s",
+            run_id,
+            len(staged),
+            pages_total,
+            name or "-",
+        )
         observability.job_created()
         return CreateRunResult(
             run_id=run_id, documents=staged, pages_total_estimate=pages_total
@@ -167,6 +174,7 @@ class RunOrchestrator:
             raise ValueError("No incomplete documents to retry")
 
         name = run.get("name") or run_id
+        logger.info("run=%s retry queued incomplete_docs=%d", run_id, len(retry_paths))
         result = await self.create_run(
             retry_paths,
             name=f"{name} retry",
@@ -189,14 +197,19 @@ class RunOrchestrator:
     ) -> None:
         run_id = result.run_id
         started_at = _now()
-        await self.db.update_run(
-            run_id, status="processing", stage="ocr", started_at=started_at
-        )
-        await self._emit(run_id, "run_started", {"started_at": started_at})
-
         pages_total = result.pages_total_estimate
         pages_completed = 0
         documents_meta: list = []
+        await self.db.update_run(
+            run_id, status="processing", stage="ocr", started_at=started_at
+        )
+        logger.info(
+            "run=%s started docs=%d pages=%d",
+            run_id,
+            len(result.documents),
+            pages_total,
+        )
+        await self._emit(run_id, "run_started", {"started_at": started_at})
 
         async def page_event(event: dict) -> None:
             nonlocal pages_completed
@@ -214,14 +227,38 @@ class RunOrchestrator:
                     token_count=event.get("token_count", 0),
                     validation_status=event.get("validation_status", "pass"),
                 )
+                logger.info(
+                    "run=%s page=%d/%d doc=%s status=%s time=%.1fms",
+                    run_id,
+                    pages_completed,
+                    pages_total,
+                    event.get("document"),
+                    event.get("validation_status"),
+                    event.get("processing_time_ms", 0.0),
+                )
             elif etype == "page_retry":
                 observability.page_retry()
+                logger.info(
+                    "run=%s page=%s retry attempt=%s strategy=%s reason=%s",
+                    run_id,
+                    event.get("page"),
+                    event.get("attempt"),
+                    event.get("new_strategy"),
+                    event.get("reason"),
+                )
             await self._emit(run_id, etype, event)
 
         try:
-            for staged in result.documents:
+            for index, staged in enumerate(result.documents, start=1):
                 paths = self.storage.artifact_paths(
                     run_id, staged.document_id, staged.filename
+                )
+                logger.info(
+                    "run=%s doc=%d/%d started %s",
+                    run_id,
+                    index,
+                    len(result.documents),
+                    staged.filename,
                 )
                 processor = BatchProcessor(
                     self.db, event_callback=page_event, strip_refs=strip_refs
@@ -238,6 +275,16 @@ class RunOrchestrator:
                 await self.db.update_run(
                     run_id, documents_completed=len(documents_meta)
                 )
+                logger.info(
+                    "run=%s doc=%d/%d completed %s pass=%d warn=%d fail=%d",
+                    run_id,
+                    index,
+                    len(result.documents),
+                    staged.filename,
+                    doc_meta.pages_pass,
+                    doc_meta.pages_warn,
+                    doc_meta.pages_fail,
+                )
 
             dataset_bundle = await self._maybe_export(
                 run_id, documents_meta, export_parquet
@@ -253,6 +300,7 @@ class RunOrchestrator:
                 dataset_bundle=dataset_bundle,
                 completed_at=completed_at,
             )
+            logger.info("run=%s completed bundle=%s", run_id, dataset_bundle or "-")
             observability.job_completed()
             await self._emit(
                 run_id,
@@ -285,6 +333,7 @@ class RunOrchestrator:
         if not (export_parquet and documents_meta):
             return None
         await self.db.update_run(run_id, stage="exporting")
+        logger.info("run=%s exporting dataset docs=%d", run_id, len(documents_meta))
         await self._emit(run_id, "dataset_export_started", {})
         exports = []
         for did, paths, meta in documents_meta:

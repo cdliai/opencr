@@ -25,9 +25,11 @@ from ocr_pipeline.services.run_storage import RunStorage
 from ocr_pipeline.services.startup import wait_for_model_server
 
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+    level=getattr(logging, settings.log_level.upper(), logging.INFO),
+    format="%(asctime)s %(levelname)-7s %(name)s :: %(message)s",
 )
+for noisy_logger in ("httpx", "httpcore", "urllib3", "huggingface_hub"):
+    logging.getLogger(noisy_logger).setLevel(logging.WARNING)
 logger = logging.getLogger("ocr_pipeline")
 
 

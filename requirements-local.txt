@@ -10,3 +10,4 @@ transformers>=4.46.0
 accelerate>=0.34.0
 einops>=0.8.0
 sentencepiece>=0.2.0
+easydict>=1.13
