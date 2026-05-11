@@ -134,11 +134,15 @@ class RunOrchestrator:
             await self.db.link_run_document(run_id, s.document_id, status="pending")
 
         observability.job_created()
-        return CreateRunResult(run_id=run_id, documents=staged, pages_total_estimate=pages_total)
+        return CreateRunResult(
+            run_id=run_id, documents=staged, pages_total_estimate=pages_total
+        )
 
     # ---------- execution ----------
 
-    def start(self, result: CreateRunResult, *, strip_refs: bool, export_parquet: bool) -> asyncio.Task:
+    def start(
+        self, result: CreateRunResult, *, strip_refs: bool, export_parquet: bool
+    ) -> asyncio.Task:
         task = asyncio.create_task(
             self._run(result, strip_refs=strip_refs, export_parquet=export_parquet)
         )
@@ -155,7 +159,9 @@ class RunOrchestrator:
     ) -> None:
         run_id = result.run_id
         started_at = _now()
-        await self.db.update_run(run_id, status="processing", stage="ocr", started_at=started_at)
+        await self.db.update_run(
+            run_id, status="processing", stage="ocr", started_at=started_at
+        )
         await self._emit(run_id, "run_started", {"started_at": started_at})
 
         pages_total = result.pages_total_estimate
@@ -169,7 +175,9 @@ class RunOrchestrator:
                 pages_completed += 1
                 progress = (pages_completed / pages_total) if pages_total else 0
                 await self.db.update_run(
-                    run_id, pages_completed=pages_completed, progress=min(0.99, progress),
+                    run_id,
+                    pages_completed=pages_completed,
+                    progress=min(0.99, progress),
                 )
                 observability.page_completed(
                     processing_time_ms=event.get("processing_time_ms", 0.0),
@@ -182,8 +190,12 @@ class RunOrchestrator:
 
         try:
             for staged in result.documents:
-                paths = self.storage.artifact_paths(run_id, staged.document_id, staged.filename)
-                processor = BatchProcessor(self.db, event_callback=page_event, strip_refs=strip_refs)
+                paths = self.storage.artifact_paths(
+                    run_id, staged.document_id, staged.filename
+                )
+                processor = BatchProcessor(
+                    self.db, event_callback=page_event, strip_refs=strip_refs
+                )
                 doc_meta = await processor.process_document(
                     staged.source_path,
                     run_id=run_id,
@@ -193,51 +205,70 @@ class RunOrchestrator:
                 )
                 documents_meta.append((staged.document_id, paths, doc_meta))
                 observability.document_completed()
-                await self.db.update_run(run_id, documents_completed=len(documents_meta))
+                await self.db.update_run(
+                    run_id, documents_completed=len(documents_meta)
+                )
 
-            dataset_bundle = await self._maybe_export(run_id, documents_meta, export_parquet)
+            dataset_bundle = await self._maybe_export(
+                run_id, documents_meta, export_parquet
+            )
 
             completed_at = _now()
             await self.db.update_run(
                 run_id,
-                status="completed", stage="completed", progress=1.0,
+                status="completed",
+                stage="completed",
+                progress=1.0,
                 pages_completed=pages_total,
                 dataset_bundle=dataset_bundle,
                 completed_at=completed_at,
             )
             observability.job_completed()
-            await self._emit(run_id, "run_complete", {
-                "completed_at": completed_at,
-                "documents_total": len(result.documents),
-                "documents_completed": len(documents_meta),
-                "pages_total": pages_total,
-                "dataset_bundle": dataset_bundle,
-                **self._aggregate_totals(documents_meta),
-            })
+            await self._emit(
+                run_id,
+                "run_complete",
+                {
+                    "completed_at": completed_at,
+                    "documents_total": len(result.documents),
+                    "documents_completed": len(documents_meta),
+                    "pages_total": pages_total,
+                    "dataset_bundle": dataset_bundle,
+                    **self._aggregate_totals(documents_meta),
+                },
+            )
         except Exception as exc:
             logger.exception("Run %s failed", run_id)
             await self.db.update_run(
-                run_id, status="failed", stage="failed", error=str(exc), completed_at=_now(),
+                run_id,
+                status="failed",
+                stage="failed",
+                error=str(exc),
+                completed_at=_now(),
             )
             observability.job_failed()
             await self._emit(run_id, "run_failed", {"error": str(exc)})
 
-    async def _maybe_export(self, run_id: str, documents_meta: list, export_parquet: bool) -> str | None:
+    async def _maybe_export(
+        self, run_id: str, documents_meta: list, export_parquet: bool
+    ) -> str | None:
         if not (export_parquet and documents_meta):
             return None
         await self.db.update_run(run_id, stage="exporting")
         await self._emit(run_id, "dataset_export_started", {})
         exports = []
         for did, paths, meta in documents_meta:
-            exports.append(DocumentExport(
-                metadata=meta,
-                document_id=did,
-                artifact_paths=paths,
-                catalog_metadata=await self.db.get_document(did) or {},
-            ))
+            exports.append(
+                DocumentExport(
+                    metadata=meta,
+                    document_id=did,
+                    artifact_paths=paths,
+                    catalog_metadata=await self.db.get_document(did) or {},
+                )
+            )
         result = await asyncio.to_thread(
             DatasetExporter(self.storage.dataset_dir(run_id)).export_run,
-            run_id, exports,
+            run_id,
+            exports,
         )
         return str(result.bundle)
 
@@ -248,7 +279,9 @@ class RunOrchestrator:
             "pages_warn": sum(m.pages_warn for _, _, m in documents_meta),
             "pages_fail": sum(m.pages_fail for _, _, m in documents_meta),
             "pages_empty": sum(m.pages_empty for _, _, m in documents_meta),
-            "total_time_ms": round(sum(m.total_processing_time_ms for _, _, m in documents_meta), 1),
+            "total_time_ms": round(
+                sum(m.total_processing_time_ms for _, _, m in documents_meta), 1
+            ),
         }
 
     # ---------- events ----------
@@ -268,7 +301,9 @@ class RunOrchestrator:
             except asyncio.QueueFull:
                 logger.warning("Listener queue full for run %s; dropping event", run_id)
 
-    async def subscribe(self, run_id: str, after_event_id: int = 0) -> AsyncIterator[dict]:
+    async def subscribe(
+        self, run_id: str, after_event_id: int = 0
+    ) -> AsyncIterator[dict]:
         for ev in await self.db.list_events(run_id, after_id=after_event_id):
             yield {**ev["payload"], "event_id": ev["id"]}
 

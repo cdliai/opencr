@@ -68,7 +68,6 @@ a { color: var(--accent); }
 
 .title-row { display: flex; align-items: baseline; gap: 10px; }
 .title-row h1 { margin: 0; font-size: 1.6rem; line-height: 1; }
-.version { font-size: 0.85rem; color: var(--muted); }
 
 .topbar-meta { display: flex; align-items: center; gap: 16px; }
 
@@ -256,13 +255,16 @@ input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent);
 .file-size { color: var(--muted); font-size: 0.85rem; white-space: nowrap; }
 
 .intake-options { display: grid; gap: 12px; grid-template-columns: 1fr; }
-.field { display: flex; flex-direction: column; gap: 6px; }
-.field span { font-size: 0.84rem; color: var(--muted); font-weight: 600; }
+.field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.field span { font-size: 0.76rem; color: var(--muted); font-weight: 700; }
 .field input[type="text"], .field input[type="password"] {
-  padding: 10px 14px;
+  min-width: 0;
+  height: 36px;
+  padding: 8px 11px;
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
+  border-radius: 8px;
   font: inherit;
+  font-size: 0.88rem;
   background: var(--surface-strong);
 }
 .field input:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent; }
@@ -288,7 +290,7 @@ input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent);
 
 .document-workbench-body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
+  grid-template-columns: minmax(0, 1fr) 390px;
   gap: 14px;
   padding: 16px 24px 24px;
 }
@@ -312,6 +314,21 @@ input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent);
 .document-toolbar.drag-over { background: var(--accent-soft); }
 
 .document-table { display: grid; }
+.document-group { display: grid; }
+.document-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 28px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(31, 109, 85, 0.07);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
 .document-row {
   display: grid;
   grid-template-columns: 24px minmax(220px, 1fr) 86px 84px 78px;
@@ -341,7 +358,7 @@ input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent);
 .document-title span { color: var(--muted); font-size: 0.78rem; }
 
 .document-editor-head {
-  padding: 14px 16px;
+  padding: 12px 14px;
   border-bottom: 1px solid var(--border);
 }
 .document-editor-head .eyebrow {
@@ -352,13 +369,25 @@ input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent);
   font-size: 0.66rem;
   font-weight: 700;
 }
-.document-editor-head h3 { margin: 0; font-size: 1rem; }
-.document-editor-fields { display: grid; gap: 10px; padding: 14px 16px; }
-.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.document-editor-head h3 {
+  margin: 0;
+  font-size: 0.96rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.document-editor-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 12px;
+  padding: 12px 14px;
+}
+.document-editor-fields .field-wide { grid-column: 1 / -1; }
+.field-row { display: contents; }
 .document-editor-actions {
   display: flex;
   justify-content: flex-end;
-  padding: 12px 16px;
+  padding: 10px 14px;
   border-top: 1px solid var(--border);
 }
 
@@ -554,9 +583,29 @@ input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent);
   min-height: 200px;
   max-height: 380px;
 }
+.inspector-text-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  background: #fdfaf3;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.inspector-text-head code {
+  font-family: var(--font-mono);
+  color: var(--accent);
+}
 .inspector-text pre {
   margin: 0;
-  padding: 16px 20px;
+  padding: 14px 16px;
   white-space: pre-wrap;
   word-break: break-word;
   font: 0.86rem/1.55 var(--font-mono);

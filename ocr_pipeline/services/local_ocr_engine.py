@@ -14,11 +14,13 @@ Caveats:
   imported when this module is instantiated. Install them via
   `requirements-local.txt`.
 """
+
 from __future__ import annotations
 
 import asyncio
 import logging
 import tempfile
+from importlib.util import find_spec
 from pathlib import Path
 from typing import Any
 
@@ -56,6 +58,7 @@ def _resolve_device(requested: str) -> str:
 
 def _resolve_dtype(requested: str, device: str):
     import torch
+
     if requested == "float16":
         return torch.float16
     if requested == "bfloat16":
@@ -105,8 +108,12 @@ class LocalOCREngine:
             await asyncio.to_thread(self._load_blocking)
 
     def _load_blocking(self) -> None:
+        if find_spec("torch") is None:
+            raise RuntimeError(
+                "MODEL_BACKEND=local requires `transformers` and `torch`. "
+                "Install with: pip install -r requirements-local.txt"
+            )
         try:
-            import torch
             from transformers import AutoModel, AutoTokenizer
         except ImportError as exc:
             raise RuntimeError(
@@ -118,7 +125,9 @@ class LocalOCREngine:
         dtype = _resolve_dtype(settings.local_dtype, device)
         logger.info(
             "Loading %s on %s (%s). First boot downloads ~6 GB.",
-            self.model_name, device, dtype,
+            self.model_name,
+            device,
+            dtype,
         )
 
         # eager attention works everywhere; flash-attn-2 is CUDA-only and would
@@ -126,7 +135,8 @@ class LocalOCREngine:
         attn_impl = "flash_attention_2" if device == "cuda" else "eager"
 
         tokenizer = AutoTokenizer.from_pretrained(
-            self.model_name, trust_remote_code=True,
+            self.model_name,
+            trust_remote_code=True,
             cache_dir=str(settings.local_model_cache),
         )
         model = AutoModel.from_pretrained(

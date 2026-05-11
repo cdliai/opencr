@@ -19,6 +19,7 @@ def test_document_metadata_can_be_updated_and_listed(tmp_path):
 
             updated = await db.update_document_metadata(
                 "doc-1",
+                group_path="Ottoman/Seyahatname",
                 author="Evliyâ Çelebi",
                 work="Seyahatnâme",
                 book="1",
@@ -30,6 +31,7 @@ def test_document_metadata_can_be_updated_and_listed(tmp_path):
             )
 
             assert updated["author"] == "Evliyâ Çelebi"
+            assert updated["group_path"] == "Ottoman/Seyahatname"
             assert updated["document_date_label"] == "1900s"
             assert updated["document_date_precision"] == "century"
 

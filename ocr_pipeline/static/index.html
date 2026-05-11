@@ -16,10 +16,9 @@
 
 <header class="topbar">
   <div class="brand">
-    <p class="eyebrow">OCR Operations · by cdli.ai</p>
+    <p class="eyebrow">cdli.ai</p>
     <div class="title-row">
       <h1>OpenCR</h1>
-      <span class="version" x-text="version ? 'v' + version : ''"></span>
     </div>
   </div>
   <div class="topbar-meta">
@@ -130,23 +129,31 @@
               <span>Metadata</span>
               <span>Last run</span>
             </div>
-            <template x-for="doc in documents" :key="doc.id">
-              <div class="document-row"
-                   :class="{ active: selectedDocumentId === doc.id }"
-                   @click="selectDocument(doc.id)">
-                <input type="checkbox"
-                       :checked="selectedDocumentIds.includes(doc.id)"
-                       @click.stop
-                       @change="toggleDocument(doc.id)">
-                <div class="document-title">
-                  <strong x-text="doc.display_title || doc.filename"></strong>
-                  <span x-text="doc.filename"></span>
+            <template x-for="group in groupedDocuments()" :key="group.name">
+              <div class="document-group">
+                <div class="document-group-head" x-show="group.name !== 'Ungrouped'">
+                  <span x-text="group.name"></span>
+                  <span x-text="group.items.length"></span>
                 </div>
-                <span x-text="doc.document_date_label || '—'"></span>
-                <span class="pill pill-sm"
-                      :class="doc.metadata_complete ? 'pill-success' : 'pill-warn'"
-                      x-text="doc.metadata_complete ? 'ready' : 'missing'"></span>
-                <span x-text="doc.latest_run_status || 'never'"></span>
+                <template x-for="doc in group.items" :key="doc.id">
+                  <div class="document-row"
+                       :class="{ active: selectedDocumentId === doc.id }"
+                       @click="selectDocument(doc.id)">
+                    <input type="checkbox"
+                           :checked="selectedDocumentIds.includes(doc.id)"
+                           @click.stop
+                           @change="toggleDocument(doc.id)">
+                    <div class="document-title">
+                      <strong x-text="doc.display_title || doc.filename"></strong>
+                      <span x-text="doc.filename"></span>
+                    </div>
+                    <span x-text="doc.document_date_label || '—'"></span>
+                    <span class="pill pill-sm"
+                          :class="doc.metadata_complete ? 'pill-success' : 'pill-warn'"
+                          x-text="doc.metadata_complete ? 'ready' : 'missing'"></span>
+                    <span x-text="doc.latest_run_status || 'never'"></span>
+                  </div>
+                </template>
               </div>
             </template>
           </div>
@@ -159,7 +166,8 @@
             <h3 x-text="documentDraft.display_title || documentDraft.filename"></h3>
           </header>
           <div class="document-editor-fields">
-            <label class="field"><span>Title</span><input type="text" x-model="documentDraft.display_title"></label>
+            <label class="field field-wide"><span>Title</span><input type="text" x-model="documentDraft.display_title"></label>
+            <label class="field"><span>Group</span><input type="text" placeholder="Collection/Folder" x-model="documentDraft.group_path"></label>
             <label class="field"><span>Author</span><input type="text" x-model="documentDraft.author"></label>
             <label class="field"><span>Work</span><input type="text" x-model="documentDraft.work"></label>
             <label class="field"><span>Book</span><input type="text" x-model="documentDraft.book"></label>
@@ -172,8 +180,8 @@
               <label class="field"><span>Script</span><input type="text" placeholder="latin_extended" x-model="documentDraft.script"></label>
             </div>
             <label class="field"><span>License</span><input type="text" placeholder="cc-by-4.0" x-model="documentDraft.license"></label>
-            <label class="field"><span>Source / citation</span><input type="text" x-model="documentDraft.source_citation"></label>
-            <label class="field"><span>Notes</span><input type="text" x-model="documentDraft.notes"></label>
+            <label class="field field-wide"><span>Source / citation</span><input type="text" x-model="documentDraft.source_citation"></label>
+            <label class="field field-wide"><span>Notes</span><input type="text" x-model="documentDraft.notes"></label>
           </div>
           <footer class="document-editor-actions">
             <button class="btn btn-primary" :disabled="savingDocument" @click="saveSelectedDocument">
@@ -307,7 +315,11 @@
     </div>
 
     <div class="inspector-text">
-      <pre x-text="inspector.text || '(empty)'"></pre>
+      <div class="inspector-text-head">
+        <span>OCR snapshot</span>
+        <code x-text="`page ${inspector.pageNum}`"></code>
+      </div>
+      <pre x-text="selectedPageText() || '(empty)'"></pre>
     </div>
 
     <div class="inspector-footer">

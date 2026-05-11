@@ -22,7 +22,7 @@ $(VENV):
 
 install: $(VENV)
 	$(PIP) install -r ocr_pipeline/requirements.txt -r requirements-local.txt
-	$(PIP) install pytest pytest-asyncio ruff
+	$(PIP) install -r requirements-dev.txt
 
 run: $(VENV)
 	MODEL_BACKEND=local $(PYBIN) -m uvicorn ocr_pipeline.main:app --host 0.0.0.0 --port 39672 --reload

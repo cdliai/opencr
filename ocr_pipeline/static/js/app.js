@@ -199,6 +199,14 @@ function opencrApp() {
       return API.pageImageUrl(this.selectedRunId, this.inspector.documentId, pageNum);
     },
 
+    selectedPageText() {
+      const text = this.inspector.text || '';
+      if (!text) return '';
+      const parts = text.split('\n\f\n');
+      if (parts.length <= 1) return text;
+      return parts[this.inspector.pageNum - 1] || '';
+    },
+
     pageStatusFor(pageNum) {
       return (this.inspector.document?.pages || []).find(p => p.page_num === pageNum)?.status || 'pending';
     },
@@ -246,6 +254,16 @@ function opencrApp() {
       return this.documents.find(d => d.id === this.selectedDocumentId) || null;
     },
 
+    groupedDocuments() {
+      const groups = new Map();
+      for (const doc of this.documents) {
+        const name = (doc.group_path || '').trim() || 'Ungrouped';
+        if (!groups.has(name)) groups.set(name, []);
+        groups.get(name).push(doc);
+      }
+      return [...groups.entries()].map(([name, items]) => ({ name, items }));
+    },
+
     selectDocument(documentId) {
       this.selectedDocumentId = documentId;
       const doc = this.selectedDocument();
@@ -278,6 +296,7 @@ function opencrApp() {
       try {
         await API.updateDocument(this.selectedDocumentId, {
           display_title: this.documentDraft.display_title || null,
+          group_path: this.documentDraft.group_path || null,
           author: this.documentDraft.author || null,
           work: this.documentDraft.work || null,
           book: this.documentDraft.book || null,

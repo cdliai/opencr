@@ -12,6 +12,7 @@ logger = logging.getLogger("ocr_pipeline.db")
 
 DOCUMENT_METADATA_FIELDS = {
     "display_title",
+    "group_path",
     "author",
     "work",
     "book",
@@ -27,6 +28,7 @@ DOCUMENT_METADATA_FIELDS = {
 
 DOCUMENT_METADATA_COLUMNS = {
     "display_title": "TEXT",
+    "group_path": "TEXT",
     "author": "TEXT",
     "work": "TEXT",
     "book": "TEXT",
@@ -76,6 +78,7 @@ CREATE TABLE IF NOT EXISTS documents (
     pdf_creation_date TEXT,
     pdf_producer TEXT,
     display_title TEXT,
+    group_path TEXT,
     author TEXT,
     work TEXT,
     book TEXT,
@@ -205,7 +208,9 @@ class Database:
             existing = {row["name"] for row in await cur.fetchall()}
         for name, column_type in DOCUMENT_METADATA_COLUMNS.items():
             if name not in existing:
-                await self.conn.execute(f"ALTER TABLE documents ADD COLUMN {name} {column_type}")
+                await self.conn.execute(
+                    f"ALTER TABLE documents ADD COLUMN {name} {column_type}"
+                )
 
     @asynccontextmanager
     async def cursor(self) -> AsyncIterator[aiosqlite.Cursor]:
@@ -263,7 +268,9 @@ class Database:
         await self.conn.commit()
 
     async def get_run(self, run_id: str) -> Optional[dict[str, Any]]:
-        async with self.conn.execute("SELECT * FROM runs WHERE id = ?", (run_id,)) as cur:
+        async with self.conn.execute(
+            "SELECT * FROM runs WHERE id = ?", (run_id,)
+        ) as cur:
             row = await cur.fetchone()
             return _row_to_dict(row)
 
@@ -361,7 +368,7 @@ class Database:
             """
             SELECT d.id, d.filename, d.source_path, d.file_sha256, d.file_size_bytes,
                    d.total_pages, d.pdf_title, d.pdf_author, d.pdf_creation_date, d.pdf_producer,
-                   d.author, d.work, d.book, d.document_date_label, d.document_date_precision,
+                   d.group_path, d.author, d.work, d.book, d.document_date_label, d.document_date_precision,
                    d.language, d.script, d.license, d.source_citation, d.notes, d.tags_json,
                    d.catalog_updated_at, d.first_seen_at, d.last_seen_at,
                    COALESCE(NULLIF(d.display_title, ''), NULLIF(d.pdf_title, ''), d.filename)
@@ -401,7 +408,9 @@ class Database:
             rows = await cur.fetchall()
             return [_row_to_dict(r) for r in rows]  # type: ignore[misc]
 
-    async def update_document_metadata(self, document_id: str, **fields: Any) -> dict[str, Any]:
+    async def update_document_metadata(
+        self, document_id: str, **fields: Any
+    ) -> dict[str, Any]:
         clean = {k: v for k, v in fields.items() if k in DOCUMENT_METADATA_FIELDS}
         if clean:
             clean["catalog_updated_at"] = _now()
@@ -464,7 +473,9 @@ class Database:
         )
         await self.conn.commit()
 
-    async def update_run_document(self, run_id: str, document_id: str, **fields: Any) -> None:
+    async def update_run_document(
+        self, run_id: str, document_id: str, **fields: Any
+    ) -> None:
         if not fields:
             return
         cols = ", ".join(f"{k} = ?" for k in fields)
@@ -567,11 +578,18 @@ class Database:
 
     # ---------- events ----------
 
-    async def append_event(self, run_id: str, event_type: str, payload: dict[str, Any]) -> int:
+    async def append_event(
+        self, run_id: str, event_type: str, payload: dict[str, Any]
+    ) -> int:
         now = _now()
         cur = await self.conn.execute(
             "INSERT INTO run_events (run_id, event_type, payload, created_at) VALUES (?, ?, ?, ?)",
-            (run_id, event_type, json.dumps(payload, ensure_ascii=False, default=str), now),
+            (
+                run_id,
+                event_type,
+                json.dumps(payload, ensure_ascii=False, default=str),
+                now,
+            ),
         )
         await self.conn.commit()
         last_id = cur.lastrowid or 0

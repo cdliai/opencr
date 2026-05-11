@@ -1,5 +1,6 @@
 """Static-friendly endpoints for input file management. Output/dataset listing
 moved to /api/runs."""
+
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, UploadFile
@@ -43,10 +44,12 @@ async def list_input_files():
     for p in sorted(input_dir.iterdir()):
         if p.is_file() and p.suffix.lower() == ".pdf":
             stat = p.stat()
-            files.append(FileInfo(
-                name=p.name,
-                size=stat.st_size,
-                modified=stat.st_mtime,
-                path=str(p),
-            ))
+            files.append(
+                FileInfo(
+                    name=p.name,
+                    size=stat.st_size,
+                    modified=stat.st_mtime,
+                    path=str(p),
+                )
+            )
     return files

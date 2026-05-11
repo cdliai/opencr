@@ -3,7 +3,6 @@
 
 import argparse
 import asyncio
-import json
 import sys
 import time
 from pathlib import Path
@@ -22,7 +21,9 @@ async def progress_callback(event: dict):
         doc = event["document"]
         page = event["page"]
         total = event["total_pages"]
-        print(f"  [{page}/{total}] Processing {doc} page {page} ({event['mode']}, {event['dpi']} DPI)...")
+        print(
+            f"  [{page}/{total}] Processing {doc} page {page} ({event['mode']}, {event['dpi']} DPI)..."
+        )
 
     elif event_type == "page_complete":
         doc = event["document"]
@@ -51,7 +52,9 @@ async def progress_callback(event: dict):
         p = event["pages_pass"]
         w = event["pages_warn"]
         f = event["pages_fail"]
-        print(f"\n  {doc}: {pages} pages | pass={p} warn={w} fail={f} | {time_ms:.0f}ms")
+        print(
+            f"\n  {doc}: {pages} pages | pass={p} warn={w} fail={f} | {time_ms:.0f}ms"
+        )
         print(f"  Output: {event['output_path']}")
 
 
@@ -66,7 +69,8 @@ async def main():
         help="PDF file(s) or directory containing PDFs",
     )
     parser.add_argument(
-        "-o", "--output",
+        "-o",
+        "--output",
         default=None,
         help=f"Output directory (default: {settings.output_dir})",
     )

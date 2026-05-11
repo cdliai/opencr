@@ -32,6 +32,7 @@ def test_export_run_writes_parquet_manifest_and_bundle(tmp_path):
         artifact_paths=paths,
         catalog_metadata={
             "author": "Evliyâ Çelebi",
+            "group_path": "Ottoman/Seyahatname",
             "work": "Seyahatnâme",
             "book": "1",
             "document_date_label": "1900s",
@@ -52,16 +53,29 @@ def test_export_run_writes_parquet_manifest_and_bundle(tmp_path):
     documents_table = pq.read_table(result.documents_parquet)
     assert pages_table.num_rows == 2
     assert documents_table.num_rows == 1
+    assert "page_id" in pages_table.column_names
     assert "raw_text" in pages_table.column_names
     assert "clean_text" in pages_table.column_names
+    assert "clean_text_sha256" in pages_table.column_names
     assert "author" in pages_table.column_names
+    assert pages_table.column("group_path").to_pylist() == [
+        "Ottoman/Seyahatname",
+        "Ottoman/Seyahatname",
+    ]
     assert pages_table.column("work").to_pylist() == ["Seyahatnâme", "Seyahatnâme"]
-    assert pages_table.column("document_date_precision").to_pylist() == ["century", "century"]
+    assert pages_table.column("document_date_precision").to_pylist() == [
+        "century",
+        "century",
+    ]
     assert "split" in documents_table.column_names
+    assert "clean_text_sha256" in documents_table.column_names
     assert documents_table.column("author").to_pylist() == ["Evliyâ Çelebi"]
+    assert documents_table.column("group_path").to_pylist() == ["Ottoman/Seyahatname"]
 
     manifest = json.loads(result.manifest.read_text(encoding="utf-8"))
     assert manifest["run_id"] == "run-1234"
+    assert manifest["created_by"]["project"] == "opencr"
+    assert manifest["created_by"]["organization"] == "cdli.ai"
     assert manifest["documents_count"] == 1
     assert manifest["pages_count"] == 2
     assert manifest["schema_version"] == 2

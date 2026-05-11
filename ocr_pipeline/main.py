@@ -9,7 +9,16 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from ocr_pipeline.config import settings
-from ocr_pipeline.routers import auth, documents, health, extract, jobs, metrics, runs, ui
+from ocr_pipeline.routers import (
+    auth,
+    documents,
+    health,
+    extract,
+    jobs,
+    metrics,
+    runs,
+    ui,
+)
 from ocr_pipeline.services.db import init_database
 from ocr_pipeline.services.run_orchestrator import init_orchestrator
 from ocr_pipeline.services.run_storage import RunStorage
@@ -25,7 +34,9 @@ logger = logging.getLogger("ocr_pipeline")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("OpenCR v%s starting (cdli.ai)", settings.pipeline_version)
-    logger.info("Model server: %s | Model: %s", settings.model_server_url, settings.model_name)
+    logger.info(
+        "Model server: %s | Model: %s", settings.model_server_url, settings.model_name
+    )
 
     db = init_database(settings.db_path)
     await db.connect()
@@ -39,7 +50,9 @@ async def lifespan(app: FastAPI):
     if await wait_for_model_server():
         logger.info("Pipeline ready to accept requests.")
     else:
-        logger.warning("Model server not ready — extraction requests will 503 until it is available.")
+        logger.warning(
+            "Model server not ready — extraction requests will 503 until it is available."
+        )
 
     yield
 
@@ -55,7 +68,10 @@ app = FastAPI(
     ),
     version=settings.pipeline_version,
     contact={"name": "cdli.ai", "url": "https://cdli.ai"},
-    license_info={"name": "Apache-2.0", "url": "https://www.apache.org/licenses/LICENSE-2.0"},
+    license_info={
+        "name": "Apache-2.0",
+        "url": "https://www.apache.org/licenses/LICENSE-2.0",
+    },
     lifespan=lifespan,
 )
 
@@ -86,4 +102,7 @@ async def serve_index():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("ocr_pipeline.main:app", host=settings.host, port=settings.port, reload=False)
+
+    uvicorn.run(
+        "ocr_pipeline.main:app", host=settings.host, port=settings.port, reload=False
+    )

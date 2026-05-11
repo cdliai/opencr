@@ -23,7 +23,9 @@ def test_upload_and_list_input(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "output_dir", output_dir)
     monkeypatch.setattr(settings, "runs_dir", runs_dir)
     monkeypatch.setattr(settings, "db_path", db_path)
-    monkeypatch.setattr(main_module, "wait_for_model_server", fake_wait_for_model_server)
+    monkeypatch.setattr(
+        main_module, "wait_for_model_server", fake_wait_for_model_server
+    )
     model_readiness.ready = True
     model_readiness.error = None
 
@@ -49,6 +51,7 @@ def test_upload_and_list_input(tmp_path, monkeypatch):
             f"/api/documents/{docs[0]['id']}",
             json={
                 "author": "Evliyâ Çelebi",
+                "group_path": "Ottoman/Seyahatname",
                 "work": "Seyahatnâme",
                 "book": "1",
                 "document_date_label": "1900s",
@@ -60,6 +63,7 @@ def test_upload_and_list_input(tmp_path, monkeypatch):
         )
         assert patch.status_code == 200
         assert patch.json()["metadata_complete"] is True
+        assert patch.json()["group_path"] == "Ottoman/Seyahatname"
 
 
 def test_runs_list_empty_when_no_runs(tmp_path, monkeypatch):
@@ -74,7 +78,9 @@ def test_runs_list_empty_when_no_runs(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "output_dir", output_dir)
     monkeypatch.setattr(settings, "runs_dir", output_dir / "runs")
     monkeypatch.setattr(settings, "db_path", output_dir / "opencr.sqlite")
-    monkeypatch.setattr(main_module, "wait_for_model_server", fake_wait_for_model_server)
+    monkeypatch.setattr(
+        main_module, "wait_for_model_server", fake_wait_for_model_server
+    )
     model_readiness.ready = True
 
     with TestClient(main_module.app) as client:
@@ -105,5 +111,9 @@ def test_home_uses_document_workbench():
     assert 'class="document-workbench"' in html
     assert "document_date_label" in html
     assert "document_date_precision" in html
+    assert "group_path" in html
+    assert "OCR snapshot" in html
     assert "selectedDocumentIds" in app_js
+    assert "groupedDocuments()" in app_js
+    assert "selectedPageText()" in app_js
     assert "saveSelectedDocument()" in app_js

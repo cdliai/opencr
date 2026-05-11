@@ -25,12 +25,12 @@ class OutputValidator:
     """
 
     # --- Thresholds — tune based on your corpus --- #
-    MAX_REPETITION_RATIO = 0.35                      # If >35% of lines are duplicates -> WARN
-    MAX_REPETITION_RATIO_FAIL = 0.60                 # If >60% -> FAIL
-    MIN_UNIQUE_CHARS = 10                            # Minimum unique characters for non-empty
-    MAX_SINGLE_CHAR_RATIO = 0.50                     # If >50% of text is one character -> FAIL
-    MIN_TEXT_LENGTH = 20                             # Below this = probably blank page
-    MAX_CONSECUTIVE_DUPES = 5                        # 5+ identical consecutive lines = WARN
+    MAX_REPETITION_RATIO = 0.35  # If >35% of lines are duplicates -> WARN
+    MAX_REPETITION_RATIO_FAIL = 0.60  # If >60% -> FAIL
+    MIN_UNIQUE_CHARS = 10  # Minimum unique characters for non-empty
+    MAX_SINGLE_CHAR_RATIO = 0.50  # If >50% of text is one character -> FAIL
+    MIN_TEXT_LENGTH = 20  # Below this = probably blank page
+    MAX_CONSECUTIVE_DUPES = 5  # 5+ identical consecutive lines = WARN
 
     def validate(self, text: str, page_num: int) -> ValidationResult:
         issues: list[str] = []
@@ -46,7 +46,7 @@ class OutputValidator:
             )
 
         # Check 2: Line-level repetition
-        lines = [l.strip() for l in stripped.split("\n") if l.strip()]
+        lines = [line.strip() for line in stripped.split("\n") if line.strip()]
         single_char_ratio = 0.0
 
         if lines:

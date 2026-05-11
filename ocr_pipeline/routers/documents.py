@@ -12,7 +12,9 @@ ID = PathParam(..., pattern=r"^[A-Za-z0-9_\-]{1,64}$")
 
 def _document_summary(row: dict) -> DocumentSummary:
     data = dict(row)
-    data["display_title"] = data.get("display_title") or data.get("pdf_title") or data["filename"]
+    data["display_title"] = (
+        data.get("display_title") or data.get("pdf_title") or data["filename"]
+    )
     data["metadata_complete"] = bool(data.get("metadata_complete"))
     return DocumentSummary(**data)
 
@@ -27,7 +29,9 @@ async def get_document(document_id: str = ID):
     doc = await get_db().get_document(document_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
-    listed = [d for d in await get_db().list_documents(limit=1000) if d["id"] == document_id]
+    listed = [
+        d for d in await get_db().list_documents(limit=1000) if d["id"] == document_id
+    ]
     return _document_summary(listed[0] if listed else doc)
 
 
