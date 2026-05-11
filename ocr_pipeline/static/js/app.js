@@ -95,8 +95,10 @@ function opencrApp() {
       try {
         const data = await API.health();
         this.version = data.pipeline_version || '';
-        this.healthStatus = data.status;
-        this.healthClass = data.status === 'ready' ? 'ready' : 'waiting';
+        this.healthStatus = data.model_status || data.status;
+        this.healthClass = data.status === 'ready'
+          ? (data.local_model_cached === false ? 'waiting' : 'ready')
+          : 'waiting';
       } catch {
         this.healthStatus = 'offline';
         this.healthClass = 'error';

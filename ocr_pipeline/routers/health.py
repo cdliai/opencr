@@ -12,7 +12,7 @@ router = APIRouter()
 async def health_check():
 
     status = "ready" if model_readiness.ready else "waiting"
-    
+
     resp = HealthResponse(
         status=status,
         pipeline_version=settings.pipeline_version,
@@ -21,6 +21,8 @@ async def health_check():
         model_status=model_readiness.status,
         input_dir=str(settings.input_dir),
         output_dir=str(settings.output_dir),
+        local_model_cached=model_readiness.local_model_cached,
+        local_model_cache_dir=model_readiness.local_model_cache_dir,
     )
     if not model_readiness.ready:
         return JSONResponse(content=resp.model_dump(), status_code=503)

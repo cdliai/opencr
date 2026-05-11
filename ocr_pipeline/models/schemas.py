@@ -74,6 +74,8 @@ class HealthResponse(BaseModel):
     model_status: str
     input_dir: str = ""
     output_dir: str = ""
+    local_model_cached: Optional[bool] = None
+    local_model_cache_dir: Optional[str] = None
 
 
 class FileInfo(BaseModel):
