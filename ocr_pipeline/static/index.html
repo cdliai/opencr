@@ -170,7 +170,9 @@
                     <span class="pill pill-sm"
                           :class="doc.metadata_complete ? 'pill-success' : 'pill-warn'"
                           x-text="doc.metadata_complete ? 'ready' : 'missing'"></span>
-                    <span x-text="doc.latest_run_status || 'never'"></span>
+                    <span class="pill pill-sm"
+                          :class="documentProcessClass(doc)"
+                          x-text="documentProcessLabel(doc)"></span>
                   </div>
                 </template>
               </div>
@@ -258,7 +260,7 @@
           ↓ Dataset bundle (zip)
         </button>
         <button class="btn btn-ghost" @click="downloadOCRPairs">
-          ↓ OCR pairs (zip)
+          <span x-text="selectedRunDocumentIds.length ? `↓ OCR pairs (${selectedRunDocumentIds.length})` : '↓ OCR pairs (zip)'"></span>
         </button>
         <button class="btn btn-primary"
                 @click="openHFModal"
@@ -280,7 +282,12 @@
                 :class="{ active: inspector.documentId === doc.document_id }"
                 @click="openDocument(doc.document_id)">
               <div class="doc-head">
-                <span class="doc-name" x-text="doc.filename"></span>
+                <label class="checkbox-row" @click.stop>
+                  <input type="checkbox"
+                         :checked="selectedRunDocumentIds.includes(doc.document_id)"
+                         @change="toggleRunDocument(doc.document_id)">
+                  <span class="doc-name" x-text="doc.filename"></span>
+                </label>
                 <span class="pill pill-sm"
                       :class="runStatusClass(doc.status)"
                       x-text="doc.status"></span>

@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 from io import BytesIO
 from pathlib import Path
@@ -310,6 +311,7 @@ async def download_ocr_pairs(
     run_id: str = ID,
     dpi: int = Query(160, ge=50, le=400),
     text_mode: str = Query("clean", pattern="^(clean|raw)$"),
+    document_ids: str | None = Query(None),
 ):
     db = get_db()
     run = await _require_run(run_id)
@@ -317,6 +319,17 @@ async def download_ocr_pairs(
         raise HTTPException(status_code=409, detail="Run is not yet completed")
 
     documents = await db.list_run_documents(run_id)
+    selected_ids = {
+        part.strip() for part in (document_ids or "").split(",") if part.strip()
+    } or None
+    if selected_ids:
+        available_ids = {doc["document_id"] for doc in documents}
+        missing = selected_ids - available_ids
+        if missing:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Document not found in run: {sorted(missing)[0]}",
+            )
     pages_by_document = {
         doc["document_id"]: await db.list_pages(run_id, doc["document_id"])
         for doc in documents
@@ -325,13 +338,29 @@ async def download_ocr_pairs(
         doc["document_id"]: await db.get_document(doc["document_id"]) or {}
         for doc in documents
     }
-    exporter = OCRPairExporter(settings.runs_dir / run_id / "dataset" / "ocr_pairs")
+    scope = "all"
+    if selected_ids:
+        scope = hashlib.sha256(
+            ",".join(sorted(selected_ids)).encode("utf-8")
+        ).hexdigest()[:12]
+    export_dir = (
+        settings.runs_dir / run_id / "dataset" / f"ocr_pairs_{text_mode}_{dpi}_{scope}"
+    )
+    cached_bundle = export_dir.with_suffix(".zip")
+    if cached_bundle.exists():
+        return FileResponse(
+            cached_bundle,
+            media_type="application/zip",
+            filename=f"{run_id}-ocr-pairs.zip",
+        )
+    exporter = OCRPairExporter(export_dir)
     result = await asyncio.to_thread(
         exporter.export_run,
         run=run,
         documents=documents,
         pages_by_document=pages_by_document,
         catalog_by_document=catalog_by_document,
+        document_ids=selected_ids,
         dpi=dpi,
         text_mode=text_mode,
     )

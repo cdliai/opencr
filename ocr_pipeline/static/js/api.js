@@ -143,8 +143,10 @@ const API = {
     return `/api/runs/${encodeURIComponent(runId)}/dataset/download`;
   },
 
-  ocrPairsDownloadUrl(runId, { dpi = 160, textMode = 'clean' } = {}) {
-    return `/api/runs/${encodeURIComponent(runId)}/ocr-pairs/download?dpi=${dpi}&text_mode=${encodeURIComponent(textMode)}`;
+  ocrPairsDownloadUrl(runId, { dpi = 160, textMode = 'clean', documentIds = [] } = {}) {
+    const params = new URLSearchParams({ dpi: String(dpi), text_mode: textMode });
+    if (documentIds.length > 0) params.set('document_ids', documentIds.join(','));
+    return `/api/runs/${encodeURIComponent(runId)}/ocr-pairs/download?${params.toString()}`;
   },
 
   async publishToHF(runId, payload) {

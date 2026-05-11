@@ -1,6 +1,7 @@
 import hashlib
 import json
 import shutil
+import tempfile
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -45,6 +46,8 @@ class OCRPairExporter:
 
     @staticmethod
     def _json_list(raw: str | None) -> list[str]:
+        if isinstance(raw, list):
+            return [str(item) for item in raw]
         if not raw:
             return []
         try:
@@ -68,15 +71,19 @@ class OCRPairExporter:
         documents: list[dict],
         pages_by_document: dict[str, list[dict]],
         catalog_by_document: dict[str, dict],
+        document_ids: set[str] | None = None,
         dpi: int = 160,
         text_mode: str = "clean",
     ) -> OCRPairExportResult:
         if text_mode not in {"clean", "raw"}:
             raise ValueError("text_mode must be clean or raw")
 
-        if self.export_dir.exists():
-            shutil.rmtree(self.export_dir)
-        images_dir = self.export_dir / "images"
+        tmp_parent = self.export_dir.parent
+        tmp_parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = Path(
+            tempfile.mkdtemp(prefix=f"{self.export_dir.name}.", dir=tmp_parent)
+        )
+        images_dir = tmp_path / "images"
         images_dir.mkdir(parents=True, exist_ok=True)
 
         split_rows: dict[str, list[dict]] = {"train": [], "validation": [], "test": []}
@@ -86,6 +93,8 @@ class OCRPairExporter:
             if doc.get("status") != "completed":
                 continue
             document_id = doc["document_id"]
+            if document_ids is not None and document_id not in document_ids:
+                continue
             catalog = catalog_by_document.get(document_id, {})
             pdf_path_str = doc.get("artifact_source_pdf") or doc.get(
                 "document_source_path"
@@ -121,16 +130,24 @@ class OCRPairExporter:
                 raw_text = raw_pages[page_num - 1]
                 clean_text = clean_pages[page_num - 1]
                 text = clean_text if text_mode == "clean" else raw_text
-                split = self._split_name(page_id)
+                split_key = doc.get("file_sha256") or document_id
+                split = self._split_name(split_key)
+                image_path = images_dir / f"{page_id}.png"
+                image_hash = hashlib.sha256(image_path.read_bytes()).hexdigest()
 
                 split_rows[split].append(
                     {
                         "id": page_id,
+                        "run_id": run["id"],
                         "image": image_rel,
                         "text": text,
                         "raw_text": raw_text,
                         "clean_text": clean_text,
                         "text_mode": text_mode,
+                        "label_source": "cleaned_machine_ocr"
+                        if text_mode == "clean"
+                        else "machine_ocr",
+                        "review_status": "unreviewed",
                         "document_id": document_id,
                         "document_name": doc.get("document_filename"),
                         "page": page_num,
@@ -155,6 +172,10 @@ class OCRPairExporter:
                         "extraction_mode": page_meta.get("extraction_mode"),
                         "extraction_attempt": page_meta.get("extraction_attempt"),
                         "dpi_used": page_meta.get("dpi_used"),
+                        "render_dpi": dpi,
+                        "image_width": image.width,
+                        "image_height": image.height,
+                        "image_sha256": image_hash,
                         "source_file": doc.get("document_filename"),
                         "source_pdf_sha256": doc.get("file_sha256"),
                         "ocr_model": run.get("model_used"),
@@ -163,8 +184,11 @@ class OCRPairExporter:
                 )
                 pages_count += 1
 
-        self._write_jsonl(split_rows)
-        self._write_manifest(run, pages_count, dpi, text_mode)
+        self._write_jsonl(tmp_path, split_rows)
+        self._write_manifest(tmp_path, run, pages_count, dpi, text_mode)
+        if self.export_dir.exists():
+            shutil.rmtree(self.export_dir)
+        tmp_path.replace(self.export_dir)
         bundle = self.export_dir.with_suffix(".zip")
         if bundle.exists():
             bundle.unlink()
@@ -181,16 +205,16 @@ class OCRPairExporter:
         path = Path(path_str)
         return path.read_text(encoding="utf-8") if path.exists() else ""
 
-    def _write_jsonl(self, split_rows: dict[str, list[dict]]) -> None:
+    def _write_jsonl(self, export_dir: Path, split_rows: dict[str, list[dict]]) -> None:
         for split, rows in split_rows.items():
-            path = self.export_dir / f"{split}.jsonl"
+            path = export_dir / f"{split}.jsonl"
             path.write_text(
                 "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows),
                 encoding="utf-8",
             )
 
     def _write_manifest(
-        self, run: dict, pages_count: int, dpi: int, text_mode: str
+        self, export_dir: Path, run: dict, pages_count: int, dpi: int, text_mode: str
     ) -> None:
         payload = {
             "export_type": "ocr_pairs",
@@ -200,13 +224,23 @@ class OCRPairExporter:
             "image_format": "png",
             "dpi": dpi,
             "text_mode": text_mode,
+            "dataset_purpose": "ocr_audit",
+            "label_source": "cleaned_machine_ocr"
+            if text_mode == "clean"
+            else "machine_ocr",
+            "review_status": "unreviewed",
             "schema_version": 1,
+            "split_strategy": {
+                "method": "sha256_bucket",
+                "key": "source_pdf_sha256",
+                "ratios": {"train": 0.90, "validation": 0.05, "test": 0.05},
+            },
             "ocr_model": run.get("model_used") or settings.model_name,
             "pipeline_version": run.get("pipeline_version")
             or settings.pipeline_version,
             "splits": ["train", "validation", "test"],
         }
-        (self.export_dir / "manifest.json").write_text(
+        (export_dir / "manifest.json").write_text(
             json.dumps(payload, indent=2, ensure_ascii=False),
             encoding="utf-8",
         )

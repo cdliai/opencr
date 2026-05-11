@@ -31,6 +31,7 @@ function opencrApp() {
     runs: [],
     selectedRunId: null,
     selectedRun: null,
+    selectedRunDocumentIds: [],
 
     documents: [],
     selectedDocumentIds: [],
@@ -136,12 +137,14 @@ function opencrApp() {
       if (!runId) {
         this.selectedRunId = null;
         this.selectedRun = null;
+        this.selectedRunDocumentIds = [];
         this.inspector = emptyInspector();
         return;
       }
       this.selectedRunId = runId;
       try {
         this.selectedRun = await API.getRun(runId);
+        this.selectedRunDocumentIds = [];
         const firstCompleted = (this.selectedRun.documents || []).find(d => d.status === 'completed');
         if (firstCompleted) await this.openDocument(firstCompleted.document_id);
         else this.inspector = emptyInspector();
@@ -253,6 +256,28 @@ function opencrApp() {
 
     pageStatusClass(status) { return PAGE_STATUS[status] || 'page-pending'; },
     runStatusClass(status) { return STATUS_PILL[status] || 'pill-muted'; },
+
+    documentProcessLabel(doc) {
+      const status = doc.latest_run_status;
+      if (status === 'completed') return 'processed';
+      if (['queued', 'processing'].includes(status)) return 'running';
+      if (status === 'failed') return 'failed';
+      return 'never';
+    },
+
+    documentProcessClass(doc) {
+      const status = doc.latest_run_status;
+      if (status === 'completed') return 'pill-success';
+      if (['queued', 'processing'].includes(status)) return 'pill-active';
+      if (status === 'failed') return 'pill-error';
+      return 'pill-muted';
+    },
+
+    toggleRunDocument(documentId) {
+      const i = this.selectedRunDocumentIds.indexOf(documentId);
+      if (i === -1) this.selectedRunDocumentIds.push(documentId);
+      else this.selectedRunDocumentIds.splice(i, 1);
+    },
 
     selectedDocument() {
       return this.documents.find(d => d.id === this.selectedDocumentId) || null;
@@ -373,6 +398,12 @@ function opencrApp() {
     async startDocumentsRun() {
       const paths = this.selectedDocumentPaths();
       if (paths.length === 0) return this.toast('Select documents first', 'error');
+      const alreadyProcessed = this.documents.filter(
+        d => this.selectedDocumentIds.includes(d.id) && d.latest_run_status === 'completed',
+      );
+      if (alreadyProcessed.length > 0 && !confirm(`${alreadyProcessed.length} selected document(s) were already processed. Start a new run anyway?`)) {
+        return;
+      }
       this.selectedPaths = paths;
       await this.startNewRun();
     },
@@ -466,7 +497,12 @@ function opencrApp() {
     },
 
     downloadOCRPairs() {
-      if (this.selectedRunId) this._download(API.ocrPairsDownloadUrl(this.selectedRunId));
+      if (this.selectedRunId) {
+        this._download(API.ocrPairsDownloadUrl(
+          this.selectedRunId,
+          { documentIds: this.selectedRunDocumentIds },
+        ));
+      }
     },
 
     openHFModal() {

@@ -431,6 +431,40 @@ class Database:
             raise KeyError(document_id)
         return doc
 
+    async def update_documents_metadata(
+        self, document_ids: list[str], **fields: Any
+    ) -> list[dict[str, Any]]:
+        if not document_ids:
+            return []
+        clean = {k: v for k, v in fields.items() if k in DOCUMENT_METADATA_FIELDS}
+        placeholders = ", ".join("?" for _ in document_ids)
+        async with self.conn.execute(
+            f"SELECT id FROM documents WHERE id IN ({placeholders})",
+            document_ids,
+        ) as cur:
+            existing = {row["id"] for row in await cur.fetchall()}
+        missing = [
+            document_id for document_id in document_ids if document_id not in existing
+        ]
+        if missing:
+            raise KeyError(missing[0])
+        if clean:
+            clean["catalog_updated_at"] = _now()
+            cols = ", ".join(f"{k} = ?" for k in clean)
+            values = [*clean.values()]
+            for document_id in document_ids:
+                await self.conn.execute(
+                    f"UPDATE documents SET {cols} WHERE id = ?",
+                    [*values, document_id],
+                )
+            await self.conn.commit()
+        docs = []
+        for document_id in document_ids:
+            doc = await self.get_document(document_id)
+            if doc:
+                docs.append(doc)
+        return docs
+
     async def list_document_runs(self, document_id: str) -> list[dict[str, Any]]:
         async with self.conn.execute(
             """

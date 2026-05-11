@@ -34,19 +34,20 @@ async def update_documents_bulk(payload: BulkDocumentUpdate):
     if not payload.document_ids:
         raise HTTPException(status_code=400, detail="document_ids must not be empty")
     db = get_db()
-    for document_id in payload.document_ids:
-        try:
-            await db.update_document_metadata(
-                document_id,
-                group_path=payload.group_path,
-            )
-        except KeyError:
-            raise HTTPException(
-                status_code=404, detail=f"Document not found: {document_id}"
-            )
+    try:
+        await db.update_documents_metadata(
+            payload.document_ids,
+            group_path=payload.group_path,
+        )
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=404, detail=f"Document not found: {exc.args[0]}"
+        )
     documents = await db.list_documents(limit=1000)
-    selected = {document_id for document_id in payload.document_ids}
-    return [_document_summary(doc) for doc in documents if doc["id"] in selected]
+    by_id = {doc["id"]: doc for doc in documents}
+    return [
+        _document_summary(by_id[document_id]) for document_id in payload.document_ids
+    ]
 
 
 @router.get("/api/documents/{document_id}", response_model=DocumentSummary)

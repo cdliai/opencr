@@ -43,3 +43,34 @@ def test_document_metadata_can_be_updated_and_listed(tmp_path):
             await db.close()
 
     asyncio.run(_scenario())
+
+
+def test_bulk_document_metadata_validates_before_writing(tmp_path):
+    async def _scenario():
+        db = Database(tmp_path / "opencr.sqlite")
+        await db.connect()
+        try:
+            await db.upsert_document(
+                "doc-1",
+                filename="source.pdf",
+                source_path="/tmp/source.pdf",
+                file_sha256="abc",
+                file_size_bytes=123,
+            )
+
+            try:
+                await db.update_documents_metadata(
+                    ["doc-1", "missing"],
+                    group_path="Should/Not/Write",
+                )
+            except KeyError:
+                pass
+            else:
+                raise AssertionError("expected missing document to fail")
+
+            doc = await db.get_document("doc-1")
+            assert doc["group_path"] is None
+        finally:
+            await db.close()
+
+    asyncio.run(_scenario())
