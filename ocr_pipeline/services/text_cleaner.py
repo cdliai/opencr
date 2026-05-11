@@ -1,3 +1,4 @@
+import html
 import re
 import unicodedata
 
@@ -43,6 +44,15 @@ class TextCleaner:
 
     # End-of-line soft hyphens: "word-\n" or "word- \n" followed by continuation
     _HYPHEN_RE = re.compile(r"(\w)- ?\n(\w)")
+    _TABLE_RE = re.compile(r"<table\b[^>]*>.*?</table>", re.IGNORECASE | re.DOTALL)
+    _ROW_RE = re.compile(r"<tr\b[^>]*>(.*?)</tr>", re.IGNORECASE | re.DOTALL)
+    _CELL_RE = re.compile(r"<t[dh]\b[^>]*>(.*?)</t[dh]>", re.IGNORECASE | re.DOTALL)
+    _BR_RE = re.compile(r"<br\s*/?>", re.IGNORECASE)
+    _PARA_END_RE = re.compile(r"</(?:p|div|h[1-6])\s*>", re.IGNORECASE)
+    _HTML_TAG_RE = re.compile(
+        r"</?(?:center|div|span|html|body|table|thead|tbody|tfoot|tr|td|th|p|br|h[1-6])\b[^>]*>",
+        re.IGNORECASE,
+    )
 
     def clean(self, text: str, strip_refs: bool = False) -> str:
         """Full cleaning pipeline."""
@@ -53,6 +63,7 @@ class TextCleaner:
         text = self._strip_ref_blocks(text)
         text = self._strip_model_tokens(text)
         text = self._strip_artifacts(text)
+        text = self._html_to_text(text)
         text = self._rejoin_hyphens(text)
         text = self._normalize_whitespace(text)
         text = self._fix_common_ocr_issues(text)
@@ -95,6 +106,30 @@ class TextCleaner:
         for pattern in self.ARTIFACT_PATTERNS:
             text = pattern.sub("", text)
         return text
+
+    def _html_to_text(self, text: str) -> str:
+        """Convert occasional model-emitted HTML into readable plain text."""
+        text = self._TABLE_RE.sub(lambda match: self._table_to_text(match.group(0)), text)
+        text = self._BR_RE.sub("\n", text)
+        text = self._PARA_END_RE.sub("\n", text)
+        text = self._HTML_TAG_RE.sub("", text)
+        return html.unescape(text)
+
+    def _table_to_text(self, table: str) -> str:
+        rows: list[str] = []
+
+        for row_match in self._ROW_RE.finditer(table):
+            cells: list[str] = []
+            for cell_match in self._CELL_RE.finditer(row_match.group(1)):
+                cell = self._HTML_TAG_RE.sub("", cell_match.group(1))
+                cell = html.unescape(cell)
+                cell = re.sub(r"\s+", " ", cell).strip()
+                if cell:
+                    cells.append(cell)
+            if cells:
+                rows.append(" | ".join(cells))
+
+        return "\n".join(rows)
 
     def _normalize_whitespace(self, text: str) -> str:
         # Replace multiple blank lines with a single blank line

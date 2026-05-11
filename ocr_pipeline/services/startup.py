@@ -53,7 +53,7 @@ async def wait_for_model_server() -> bool:
                     )
                     await asyncio.sleep(interval)
                     continue
-            except (httpx.ConnectError, httpx.ReadTimeout, httpx.ConnectTimeout) as exc:
+            except httpx.HTTPError as exc:
                 model_readiness.error = f"connection failed ({type(exc).__name__})"
                 logger.info(
                     "Model server not reachable yet (%s)", model_readiness.error

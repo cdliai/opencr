@@ -120,6 +120,7 @@ function opencrApp() {
     toasts: [],
 
     _stream: new RunStream(),
+    _runPollTimer: null,
 
     async init() {
       await Promise.all([
@@ -194,12 +195,18 @@ function opencrApp() {
 
     async refreshSelectedRun() {
       if (!this.selectedRunId) return;
-      try { this.selectedRun = await API.getRun(this.selectedRunId); }
+      try {
+        this.selectedRun = await API.getRun(this.selectedRunId);
+        if (!['queued', 'processing'].includes(this.selectedRun.status)) {
+          this.stopRunPolling();
+        }
+      }
       catch (e) { this.toast(`Failed to refresh run: ${e.message}`, 'error'); }
     },
 
     async selectRun(runId) {
       this._stream.disconnect();
+      this.stopRunPolling();
       if (!runId) {
         this.activeView = 'documents';
         this.selectedRunId = null;
@@ -216,7 +223,10 @@ function opencrApp() {
         const firstCompleted = (this.selectedRun.documents || []).find(d => d.status === 'completed');
         if (firstCompleted) await this.openDocument(firstCompleted.document_id);
         else this.inspector = emptyInspector();
-        if (['queued', 'processing'].includes(this.selectedRun.status)) this.connectStream(runId);
+        if (['queued', 'processing'].includes(this.selectedRun.status)) {
+          this.connectStream(runId);
+          this.startRunPolling();
+        }
       } catch (e) {
         this.toast(`Failed to load run: ${e.message}`, 'error');
       }
@@ -224,9 +234,7 @@ function opencrApp() {
 
     connectStream(runId) {
       this._stream.connect(runId, async (event) => {
-        if (event.type === 'page_complete' || event.type === 'document_complete') {
-          await this.refreshSelectedRun();
-        }
+        await this.refreshSelectedRun();
         if (event.type === 'run_complete' || event.type === 'run_failed') {
           await Promise.all([this.refreshSelectedRun(), this.refreshRuns(), this.refreshMetrics()]);
           const completed = event.type === 'run_complete';
@@ -234,6 +242,21 @@ function opencrApp() {
         }
         if (event.type === 'run_started') await this.refreshRuns();
       });
+    },
+
+    startRunPolling() {
+      this.stopRunPolling();
+      this._runPollTimer = setInterval(async () => {
+        if (!this.selectedRunId) return this.stopRunPolling();
+        await Promise.all([this.refreshSelectedRun(), this.refreshRuns(), this.refreshMetrics()]);
+      }, 2000);
+    },
+
+    stopRunPolling() {
+      if (this._runPollTimer) {
+        clearInterval(this._runPollTimer);
+        this._runPollTimer = null;
+      }
     },
 
     async openDocument(documentId) {

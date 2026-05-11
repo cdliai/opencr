@@ -74,6 +74,30 @@ class TestArtifactRemoval:
         assert "HelloWorld" in result
 
 
+class TestHtmlCleanup:
+    def test_converts_html_table_to_plain_text_rows(self, cleaner):
+        text = (
+            "<table><tr><td>Köre almagan yiğittin,</td><td>Göremeyen yiğidin,</td></tr>"
+            "<tr><td>Kökiregi tüyilsin.</td><td>Göğsü duralsın.</td></tr></table>"
+        )
+
+        result = cleaner.clean(text)
+
+        assert result == (
+            "Köre almagan yiğittin, | Göremeyen yiğidin,\n"
+            "Kökiregi tüyilsin. | Göğsü duralsın."
+        )
+        assert "<table" not in result
+        assert "<td" not in result
+
+    def test_unescapes_html_entities(self, cleaner):
+        text = "&quot;Yüzü de ak dana, Şarifulla&#x27;nın giydiği"
+
+        result = cleaner.clean(text)
+
+        assert result == '"Yüzü de ak dana, Şarifulla\'nın giydiği'
+
+
 class TestWhitespaceNormalization:
     def test_multiple_blank_lines(self, cleaner):
         text = "Line 1\n\n\n\n\nLine 2"

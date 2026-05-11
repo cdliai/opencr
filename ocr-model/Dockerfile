@@ -1,4 +1,4 @@
-FROM vllm/vllm-openai:latest
+FROM vllm/vllm-openai:cu129-nightly
 ENTRYPOINT ["python3", "-m", "vllm.entrypoints.openai.api_server"]
 CMD [ \
     "--model", "deepseek-ai/DeepSeek-OCR-2", \

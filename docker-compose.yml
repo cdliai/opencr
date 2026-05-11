@@ -5,6 +5,7 @@ services:
   ocr-model:
     build: ./ocr-model
     runtime: nvidia
+    ipc: host
     restart: unless-stopped
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
