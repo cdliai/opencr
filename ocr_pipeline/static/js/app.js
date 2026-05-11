@@ -187,6 +187,42 @@ function opencrApp() {
       return (this.inspector.document?.pages || []).find(p => p.page_num === pageNum)?.status || 'pending';
     },
 
+    currentRunDocument() {
+      const docs = this.selectedRun?.documents || [];
+      if (docs.length === 0) return null;
+      return docs.find(d => d.status === 'processing')
+        || docs.find(d => ['pending', 'queued'].includes(d.status))
+        || docs.find(d => d.status === 'failed')
+        || docs[docs.length - 1];
+    },
+
+    currentRunDocumentIndex() {
+      const docs = this.selectedRun?.documents || [];
+      const current = this.currentRunDocument();
+      const index = current ? docs.findIndex(d => d.document_id === current.document_id) : -1;
+      return index === -1 ? 0 : index + 1;
+    },
+
+    runDocumentProgressLabel() {
+      const total = this.selectedRun?.documents_total || (this.selectedRun?.documents || []).length || 0;
+      return `[${this.currentRunDocumentIndex()}/${total}]`;
+    },
+
+    runProgressPercent() {
+      return Math.max(0, Math.min(100, Math.round((this.selectedRun?.progress || 0) * 100)));
+    },
+
+    runPageProgressLabel() {
+      return `${this.selectedRun?.pages_completed || 0}/${this.selectedRun?.pages_total || 0}`;
+    },
+
+    runStatsLabel() {
+      const docs = this.selectedRun?.documents || [];
+      const warn = docs.reduce((sum, d) => sum + (d.pages_warn || 0), 0);
+      const fail = docs.reduce((sum, d) => sum + (d.pages_fail || 0), 0);
+      return `${this.runProgressPercent()}% · ${warn} warn · ${fail} fail`;
+    },
+
     pageStatusClass(status) { return PAGE_STATUS[status] || 'page-pending'; },
     runStatusClass(status) { return STATUS_PILL[status] || 'pill-muted'; },
 

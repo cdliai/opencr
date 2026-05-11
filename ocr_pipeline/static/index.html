@@ -176,28 +176,30 @@
         </div>
       </header>
 
-      <section class="run-summary">
-        <div class="summary-card">
-          <span class="summary-label">Progress</span>
-          <strong x-text="Math.round((selectedRun?.progress || 0) * 100) + '%'"></strong>
-          <div class="progress-track" x-show="selectedRun?.status === 'processing' || selectedRun?.status === 'completed'">
-            <div class="progress-fill" :style="`width:${(selectedRun?.progress || 0) * 100}%`"></div>
+      <section class="run-terminal" aria-label="Run extraction progress">
+        <div class="run-terminal-head">
+          <div class="run-terminal-status">
+            <span class="run-spinner" x-show="['queued', 'processing'].includes(selectedRun?.status)"></span>
+            <span class="run-terminal-label" x-text="selectedRun?.stage || selectedRun?.status || 'idle'"></span>
           </div>
+          <code x-text="runDocumentProgressLabel()"></code>
         </div>
-        <div class="summary-card">
-          <span class="summary-label">Pages</span>
-          <strong>
-            <span x-text="selectedRun?.pages_completed || 0"></span>
-            <span class="muted-note">/ <span x-text="selectedRun?.pages_total || 0"></span></span>
-          </strong>
+        <div class="run-terminal-bar">
+          <div class="run-terminal-fill" :style="`width:${runProgressPercent()}%`"></div>
         </div>
-        <div class="summary-card">
-          <span class="summary-label">Stage</span>
-          <strong x-text="selectedRun?.stage || '—'"></strong>
-        </div>
-        <div class="summary-card">
-          <span class="summary-label">Started</span>
-          <strong x-text="formatTimestamp(selectedRun?.started_at || selectedRun?.created_at)"></strong>
+        <div class="run-terminal-body">
+          <p>
+            <span class="terminal-key">document</span>
+            <span x-text="currentRunDocument()?.filename || 'waiting'"></span>
+          </p>
+          <p>
+            <span class="terminal-key">pages</span>
+            <span x-text="runPageProgressLabel()"></span>
+          </p>
+          <p>
+            <span class="terminal-key">stats</span>
+            <span x-text="runStatsLabel()"></span>
+          </p>
         </div>
       </section>
 
@@ -235,17 +237,6 @@
                 <span class="muted-note">·</span>
                 <span x-text="`${doc.pages_pass}P / ${doc.pages_warn}W / ${doc.pages_fail}F`"></span>
                 <span class="muted-note" x-show="doc.dominant_script"> · <span x-text="doc.dominant_script"></span></span>
-              </div>
-              <div class="heatmap" x-show="doc.total_pages">
-                <template x-for="p in doc.total_pages" :key="p">
-                  <span class="heat-cell"
-                        :class="(() => {
-                          const pages = inspector.documentId === doc.document_id ? (inspector.document?.pages || []) : [];
-                          const found = pages.find(pp => pp.page_num === p);
-                          return found ? pageStatusClass(found.status) : 'page-pending';
-                        })()"
-                        :title="`Page ${p}`"></span>
-                </template>
               </div>
             </li>
           </template>

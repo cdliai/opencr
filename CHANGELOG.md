@@ -2,9 +2,10 @@
 
 All notable changes to OpenCR are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/), and the project follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [v1.0.0]
 
 ### Added
+
 - Apache-2.0 license (`LICENSE`).
 - English-first README with Turkish sibling at `README.tr.md`.
 - `CONTRIBUTING.md`, GitHub Actions CI workflow, project `Makefile`.
@@ -15,11 +16,13 @@ All notable changes to OpenCR are documented here. The format follows [Keep a Ch
 - Publish modal now prefills `username/run-name` and adds the `opencr` discoverability tag to dataset cards.
 
 ### Changed
+
 - **Breaking:** `docker compose up` no longer starts services without an explicit profile. Use `--profile gpu` (vLLM, NVIDIA) or `--profile cpu` (in-process transformers).
 - `INPUT_DIR` / `OUTPUT_DIR` default to `./input` / `./output` outside Docker, `/data/...` inside.
 - OpenAPI metadata now declares Apache-2.0; UI footer no longer claims "All rights reserved".
 
 ### Fixed
+
 - `.gitignore` now covers `.DS_Store`, IDE folders, lint caches, and HF caches.
 
 ---
@@ -34,6 +37,7 @@ All notable changes to OpenCR are documented here. The format follows [Keep a Ch
 6. GitHub auto-creates a release page from the tag; paste the changelog entry into it.
 
 Bump rules:
+
 - **PATCH** for bug fixes that don't change behavior.
 - **MINOR** for backwards-compatible features.
 - **MAJOR** for breaking changes (env var renames, removed endpoints, behavior shifts users have to adapt to).

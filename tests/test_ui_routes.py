@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+from pathlib import Path
 
 import ocr_pipeline.main as main_module
 from ocr_pipeline.config import settings
@@ -59,3 +60,17 @@ def test_runs_list_empty_when_no_runs(tmp_path, monkeypatch):
         resp = client.get("/api/runs")
         assert resp.status_code == 200
         assert resp.json() == []
+
+
+def test_run_detail_uses_minimal_terminal_progress():
+    repo_root = Path(__file__).parents[1]
+    html = (repo_root / "ocr_pipeline/static/index.html").read_text(encoding="utf-8")
+    app_js = (repo_root / "ocr_pipeline/static/js/app.js").read_text(encoding="utf-8")
+
+    assert 'class="run-terminal"' in html
+    assert 'x-text="runDocumentProgressLabel()"' in html
+    assert 'class="run-spinner"' in html
+    assert 'class="summary-card"' not in html
+    assert 'class="heatmap"' not in html
+    assert "currentRunDocument()" in app_js
+    assert "runDocumentProgressLabel()" in app_js
