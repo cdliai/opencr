@@ -115,6 +115,15 @@ const API = {
     return res.json();
   },
 
+  async retryRun(runId) {
+    const res = await fetch(`/api/runs/${encodeURIComponent(runId)}/retry`, { method: 'POST' });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.detail || 'Failed to retry run');
+    }
+    return res.json();
+  },
+
   async getRunDocument(runId, documentId) {
     const res = await fetch(
       `/api/runs/${encodeURIComponent(runId)}/documents/${encodeURIComponent(documentId)}`

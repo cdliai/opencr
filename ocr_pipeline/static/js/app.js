@@ -444,6 +444,21 @@ function opencrApp() {
       }
     },
 
+    async retryRun() {
+      if (!this.selectedRunId || this.creating) return;
+      this.creating = true;
+      try {
+        const result = await API.retryRun(this.selectedRunId);
+        this.toast(`Retry run ${result.run_id} queued`, 'success');
+        await this.refreshRuns();
+        await this.selectRun(result.run_id);
+      } catch (e) {
+        this.toast(`Retry failed: ${e.message}`, 'error');
+      } finally {
+        this.creating = false;
+      }
+    },
+
     toggleSelected(path) {
       const i = this.selectedPaths.indexOf(path);
       if (i === -1) this.selectedPaths.push(path); else this.selectedPaths.splice(i, 1);

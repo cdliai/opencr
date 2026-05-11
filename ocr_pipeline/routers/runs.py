@@ -210,6 +210,37 @@ async def create_run(request: RunCreateRequest):
     )
 
 
+@router.post("/api/runs/{run_id}/retry", response_model=RunCreateResponse)
+async def retry_run(run_id: str = ID):
+    if not model_readiness.ready:
+        raise HTTPException(
+            status_code=503, detail=f"Model server not ready: {model_readiness.status}"
+        )
+    try:
+        result = await get_orchestrator().retry_incomplete_run(run_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Run not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+
+    return RunCreateResponse(
+        run_id=result.run_id,
+        status="queued",
+        documents_total=len(result.documents),
+        pages_total_estimate=result.pages_total_estimate,
+        documents=[
+            StagedDocumentInfo(
+                document_id=d.document_id,
+                filename=d.filename,
+                file_sha256=d.file_sha256,
+                deduped=d.deduped,
+                estimated_pages=d.estimated_pages,
+            )
+            for d in result.documents
+        ],
+    )
+
+
 @router.get("/api/runs", response_model=list[RunSummary])
 async def list_runs(limit: int = Query(50, ge=1, le=500)):
     return [_run_summary(r) for r in await get_db().list_runs(limit=limit)]

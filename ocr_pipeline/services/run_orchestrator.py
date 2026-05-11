@@ -150,6 +150,36 @@ class RunOrchestrator:
         task.add_done_callback(self._tasks.discard)
         return task
 
+    async def retry_incomplete_run(self, run_id: str) -> CreateRunResult:
+        run = await self.db.get_run(run_id)
+        if not run:
+            raise KeyError(run_id)
+        if run["status"] != "failed":
+            raise ValueError("Only failed runs can be retried")
+
+        documents = await self.db.list_run_documents(run_id)
+        retry_paths = [
+            doc["document_source_path"]
+            for doc in documents
+            if doc["status"] != "completed" and doc.get("document_source_path")
+        ]
+        if not retry_paths:
+            raise ValueError("No incomplete documents to retry")
+
+        name = run.get("name") or run_id
+        result = await self.create_run(
+            retry_paths,
+            name=f"{name} retry",
+            strip_refs=bool(run.get("strip_refs")),
+            export_parquet=bool(run.get("export_parquet")),
+        )
+        self.start(
+            result,
+            strip_refs=bool(run.get("strip_refs")),
+            export_parquet=bool(run.get("export_parquet")),
+        )
+        return result
+
     async def _run(
         self,
         result: CreateRunResult,
@@ -238,6 +268,7 @@ class RunOrchestrator:
             )
         except Exception as exc:
             logger.exception("Run %s failed", run_id)
+            await self.db.fail_incomplete_run_documents(run_id)
             await self.db.update_run(
                 run_id,
                 status="failed",

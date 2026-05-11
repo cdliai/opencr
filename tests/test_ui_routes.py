@@ -169,5 +169,7 @@ def test_home_uses_document_workbench():
     assert "downloadOCRPairs()" in app_js
     assert "selectedRunDocumentIds" in app_js
     assert "documentProcessLabel" in app_js
+    assert "retryRun()" in app_js
+    assert "Retry incomplete" in html
     assert "selectedPageText()" in app_js
     assert "saveSelectedDocument()" in app_js

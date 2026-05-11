@@ -288,6 +288,12 @@ class Database:
     async def fail_orphan_runs(self) -> int:
         """Mark any run still in `processing`/`queued` as failed. Called once
         on startup so a crashed process does not leave runs visibly live."""
+        async with self.conn.execute(
+            "SELECT id FROM runs WHERE status IN ('queued', 'processing')"
+        ) as cur:
+            run_ids = [row["id"] for row in await cur.fetchall()]
+        for run_id in run_ids:
+            await self.fail_incomplete_run_documents(run_id)
         cur = await self.conn.execute(
             """
             UPDATE runs
@@ -296,6 +302,35 @@ class Database:
                    error = COALESCE(error, 'Process exited before run finished'),
                    completed_at = COALESCE(completed_at, ?)
              WHERE status IN ('queued', 'processing')
+            """,
+            (_now(),),
+        )
+        await self.conn.commit()
+        affected = cur.rowcount or 0
+        await cur.close()
+        return affected
+
+    async def fail_incomplete_run_documents(self, run_id: str) -> None:
+        await self.conn.execute(
+            """
+            UPDATE run_documents
+               SET status = 'failed',
+                   completed_at = COALESCE(completed_at, ?)
+             WHERE run_id = ?
+               AND status != 'completed'
+            """,
+            (_now(), run_id),
+        )
+        await self.conn.commit()
+
+    async def fail_documents_for_failed_runs(self) -> int:
+        cur = await self.conn.execute(
+            """
+            UPDATE run_documents
+               SET status = 'failed',
+                   completed_at = COALESCE(completed_at, ?)
+             WHERE status != 'completed'
+               AND run_id IN (SELECT id FROM runs WHERE status = 'failed')
             """,
             (_now(),),
         )

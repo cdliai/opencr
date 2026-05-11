@@ -224,6 +224,10 @@
         <div class="stage-actions">
           <span class="pill" :class="runStatusClass(selectedRun?.status)" x-text="selectedRun?.status"></span>
           <button class="btn btn-ghost btn-sm" @click="refreshSelectedRun">Refresh</button>
+          <button class="btn btn-primary btn-sm"
+                  :disabled="creating"
+                  @click="retryRun"
+                  x-show="selectedRun?.status === 'failed'">Retry incomplete</button>
           <button class="btn btn-ghost btn-sm" @click="deleteSelectedRun" x-show="selectedRun?.status !== 'processing'">Delete</button>
         </div>
       </header>

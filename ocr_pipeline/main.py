@@ -43,6 +43,9 @@ async def lifespan(app: FastAPI):
     orphans = await db.fail_orphan_runs()
     if orphans:
         logger.warning("Marked %d orphan run(s) as failed (process restart).", orphans)
+    failed_docs = await db.fail_documents_for_failed_runs()
+    if failed_docs:
+        logger.warning("Marked %d incomplete document(s) in failed runs.", failed_docs)
 
     storage = RunStorage(output_root=settings.output_dir, runs_root=settings.runs_dir)
     init_orchestrator(db, storage)
