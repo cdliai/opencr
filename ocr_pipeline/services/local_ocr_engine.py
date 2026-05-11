@@ -122,7 +122,7 @@ class LocalOCREngine:
     def _load_blocking(self) -> None:
         missing = [
             package
-            for package in ("torch", "transformers", "easydict")
+            for package in ("torch", "transformers", "tokenizers", "addict", "easydict")
             if find_spec(package) is None
         ]
         if missing:
