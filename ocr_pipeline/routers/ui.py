@@ -6,6 +6,8 @@ from fastapi import APIRouter, HTTPException, UploadFile
 
 from ocr_pipeline.config import settings
 from ocr_pipeline.models.schemas import FileInfo
+from ocr_pipeline.services.db import get_db
+from ocr_pipeline.services.document_catalog import catalog_pdf
 
 
 router = APIRouter()
@@ -25,6 +27,7 @@ async def upload_pdf(file: UploadFile):
     dest = settings.input_dir / safe_name
     content = await file.read()
     dest.write_bytes(content)
+    await catalog_pdf(get_db(), dest, filename=safe_name)
 
     return {"filename": safe_name, "size": len(content), "path": str(dest)}
 

@@ -68,6 +68,47 @@ class FileInfo(BaseModel):
     path: str
 
 
+class DocumentUpdate(BaseModel):
+    display_title: Optional[str] = None
+    author: Optional[str] = None
+    work: Optional[str] = None
+    book: Optional[str] = None
+    document_date_label: Optional[str] = None
+    document_date_precision: Optional[str] = None
+    language: Optional[str] = None
+    script: Optional[str] = None
+    license: Optional[str] = None
+    source_citation: Optional[str] = None
+    notes: Optional[str] = None
+    tags_json: Optional[str] = None
+
+
+class DocumentSummary(BaseModel):
+    id: str
+    filename: str
+    display_title: str
+    source_path: str
+    file_sha256: str
+    file_size_bytes: int
+    total_pages: Optional[int] = None
+    pdf_title: Optional[str] = None
+    pdf_author: Optional[str] = None
+    author: Optional[str] = None
+    work: Optional[str] = None
+    book: Optional[str] = None
+    document_date_label: Optional[str] = None
+    document_date_precision: Optional[str] = None
+    language: Optional[str] = None
+    script: Optional[str] = None
+    license: Optional[str] = None
+    source_citation: Optional[str] = None
+    notes: Optional[str] = None
+    tags_json: Optional[str] = None
+    metadata_complete: bool = False
+    latest_run_id: Optional[str] = None
+    latest_run_status: Optional[str] = None
+
+
 class StagedDocumentInfo(BaseModel):
     document_id: str
     filename: str

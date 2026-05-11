@@ -26,7 +26,21 @@ def test_export_run_writes_parquet_manifest_and_bundle(tmp_path):
     )
 
     exporter = DatasetExporter(storage.dataset_dir("run-1234"))
-    export = DocumentExport(metadata=document, document_id=document_id, artifact_paths=paths)
+    export = DocumentExport(
+        metadata=document,
+        document_id=document_id,
+        artifact_paths=paths,
+        catalog_metadata={
+            "author": "Evliyâ Çelebi",
+            "work": "Seyahatnâme",
+            "book": "1",
+            "document_date_label": "1900s",
+            "document_date_precision": "century",
+            "language": "ota-Latn,tr",
+            "script": "latin_extended",
+            "license": "cc-by-4.0",
+        },
+    )
     result = exporter.export_run("run-1234", [export])
 
     assert result.pages_parquet.exists()
@@ -40,7 +54,11 @@ def test_export_run_writes_parquet_manifest_and_bundle(tmp_path):
     assert documents_table.num_rows == 1
     assert "raw_text" in pages_table.column_names
     assert "clean_text" in pages_table.column_names
+    assert "author" in pages_table.column_names
+    assert pages_table.column("work").to_pylist() == ["Seyahatnâme", "Seyahatnâme"]
+    assert pages_table.column("document_date_precision").to_pylist() == ["century", "century"]
     assert "split" in documents_table.column_names
+    assert documents_table.column("author").to_pylist() == ["Evliyâ Çelebi"]
 
     manifest = json.loads(result.manifest.read_text(encoding="utf-8"))
     assert manifest["run_id"] == "run-1234"

@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from ocr_pipeline.config import settings
-from ocr_pipeline.routers import auth, health, extract, jobs, metrics, runs, ui
+from ocr_pipeline.routers import auth, documents, health, extract, jobs, metrics, runs, ui
 from ocr_pipeline.services.db import init_database
 from ocr_pipeline.services.run_orchestrator import init_orchestrator
 from ocr_pipeline.services.run_storage import RunStorage
@@ -71,7 +71,7 @@ app.add_middleware(
     https_only=False,
 )
 
-for r in (health, extract, jobs, runs, metrics, ui, auth):
+for r in (health, extract, jobs, runs, documents, metrics, ui, auth):
     app.include_router(r.router)
 
 _static_dir = Path(__file__).parent / "static"

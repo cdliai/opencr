@@ -44,6 +44,25 @@ const API = {
     return res.json();
   },
 
+  async listDocuments(limit = 500) {
+    const res = await fetch(`/api/documents?limit=${limit}`);
+    if (!res.ok) throw new Error('Failed to list documents');
+    return res.json();
+  },
+
+  async updateDocument(documentId, payload) {
+    const res = await fetch(`/api/documents/${encodeURIComponent(documentId)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.detail || 'Failed to update document');
+    }
+    return res.json();
+  },
+
   async createRun(filePaths, { name, stripRefs = false, exportParquet = true } = {}) {
     const res = await fetch('/api/runs', {
       method: 'POST',

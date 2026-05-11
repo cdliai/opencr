@@ -46,7 +46,7 @@
   </div>
 </header>
 
-<main class="console-grid">
+<main class="console-grid" :class="{ 'document-mode': !selectedRunId }">
 
   <!-- Left rail: Runs sidebar -->
   <aside class="rail">
@@ -87,78 +87,101 @@
   <!-- Center: Run detail or intake -->
   <section class="stage">
 
-    <!-- Intake panel when no run selected -->
-    <div class="intake" x-show="!selectedRunId">
+    <!-- Document workbench when no run selected -->
+    <div class="document-workbench" x-show="!selectedRunId">
       <header class="stage-header">
-        <h2>Start a new run</h2>
-        <p class="stage-sub">Drop PDFs, pick which to extract, and OpenCR will OCR, validate, and bundle them.</p>
+        <div>
+          <h2>Documents</h2>
+          <p class="stage-sub">Select PDFs, edit metadata, then run extraction.</p>
+        </div>
+        <div class="stage-actions">
+          <button class="btn btn-ghost btn-sm" @click="$refs.fileInput.click()">Upload PDFs</button>
+          <button class="btn btn-primary btn-sm"
+                  :disabled="selectedDocumentIds.length === 0 || creating"
+                  @click="startDocumentsRun">
+            <span x-show="!creating">Start run</span>
+            <span x-show="creating">Starting...</span>
+          </button>
+        </div>
       </header>
 
-      <div class="drop-zone"
-           :class="{ 'drag-over': dragOver }"
-           @dragover.prevent="dragOver = true"
-           @dragleave.prevent="dragOver = false"
-           @drop.prevent="handleDrop($event)"
-           @click="$refs.fileInput.click()">
-        <input type="file" accept=".pdf" multiple x-ref="fileInput" hidden @change="handleFileSelect($event)">
-        <p class="drop-title">Drop PDFs or click to browse</p>
-        <p class="drop-note">Files are deduplicated by content hash. Re-uploading the same PDF is free.</p>
-        <p class="drop-progress" x-show="uploadProgress !== null" x-text="'Uploading ' + uploadProgress + '%'"></p>
-      </div>
+      <input type="file" accept=".pdf" multiple x-ref="fileInput" hidden @change="handleFileSelect($event)">
 
-      <div class="intake-toolbar">
-        <label class="checkbox-row">
-          <input type="checkbox" :checked="allInputsSelected" @change="selectAllInputs($event.target.checked)">
-          <span>Select all</span>
-        </label>
-        <span class="muted-note">
-          <span x-text="selectedPaths.length"></span> of <span x-text="inputFiles.length"></span> selected
-        </span>
-        <button class="btn btn-ghost btn-sm" @click="refreshInputFiles">Refresh inputs</button>
-      </div>
-
-      <ul class="file-list" x-show="inputFiles.length > 0">
-        <template x-for="file in inputFiles" :key="file.path">
-          <li class="file-item">
-            <input type="checkbox"
-                   :checked="selectedPaths.includes(file.path)"
-                   @change="toggleSelected(file.path)">
-            <span class="file-name" x-text="file.name"></span>
-            <span class="file-size" x-text="formatSize(file.size)"></span>
-          </li>
-        </template>
-      </ul>
-      <p class="empty-note" x-show="inputFiles.length === 0">No PDFs in input directory. Upload above.</p>
-
-      <div class="intake-options">
-        <label class="field">
-          <span>Run name (optional)</span>
-          <input type="text" placeholder="e.g. arabic-corpus-batch-3" x-model="intakeOptions.name">
-        </label>
-        <label class="option-toggle">
-          <input type="checkbox" x-model="intakeOptions.stripRefs">
-          <div>
-            <strong>Strip reference blocks</strong>
-            <p>Remove DeepSeek bounding-box markup from cleaned text.</p>
+      <div class="document-workbench-body">
+        <section class="document-library">
+          <div class="document-toolbar"
+               :class="{ 'drag-over': dragOver }"
+               @dragover.prevent="dragOver = true"
+               @dragleave.prevent="dragOver = false"
+               @drop.prevent="handleDrop($event)">
+            <label class="checkbox-row">
+              <input type="checkbox" :checked="allDocumentsSelected" @change="selectAllDocuments($event.target.checked)">
+              <span><span x-text="selectedDocumentIds.length"></span> selected</span>
+            </label>
+            <button class="btn btn-ghost btn-sm" @click="refreshDocuments">Refresh</button>
+            <span class="muted-note" x-show="uploadProgress !== null" x-text="'Uploading ' + uploadProgress + '%'"></span>
           </div>
-        </label>
-        <label class="option-toggle">
-          <input type="checkbox" x-model="intakeOptions.exportParquet">
-          <div>
-            <strong>Export Parquet bundle</strong>
-            <p>Build train/validation/test-split Parquet for HuggingFace.</p>
-          </div>
-        </label>
-      </div>
 
-      <div class="intake-cta">
-        <button class="btn btn-primary"
-                :disabled="selectedPaths.length === 0 || creating"
-                @click="startNewRun">
-          <span x-show="!creating">Start OCR run</span>
-          <span x-show="creating">Starting...</span>
-        </button>
-        <p class="muted-note">Pages process concurrently — large PDFs land fast.</p>
+          <div class="document-table" x-show="documents.length > 0">
+            <div class="document-row document-row-head">
+              <span></span>
+              <span>Document</span>
+              <span>Date</span>
+              <span>Metadata</span>
+              <span>Last run</span>
+            </div>
+            <template x-for="doc in documents" :key="doc.id">
+              <div class="document-row"
+                   :class="{ active: selectedDocumentId === doc.id }"
+                   @click="selectDocument(doc.id)">
+                <input type="checkbox"
+                       :checked="selectedDocumentIds.includes(doc.id)"
+                       @click.stop
+                       @change="toggleDocument(doc.id)">
+                <div class="document-title">
+                  <strong x-text="doc.display_title || doc.filename"></strong>
+                  <span x-text="doc.filename"></span>
+                </div>
+                <span x-text="doc.document_date_label || '—'"></span>
+                <span class="pill pill-sm"
+                      :class="doc.metadata_complete ? 'pill-success' : 'pill-warn'"
+                      x-text="doc.metadata_complete ? 'ready' : 'missing'"></span>
+                <span x-text="doc.latest_run_status || 'never'"></span>
+              </div>
+            </template>
+          </div>
+          <p class="empty-note" x-show="documents.length === 0">No PDFs yet. Upload PDFs to start the catalog.</p>
+        </section>
+
+        <aside class="document-editor" x-show="selectedDocumentId">
+          <header class="document-editor-head">
+            <p class="eyebrow">Document metadata</p>
+            <h3 x-text="documentDraft.display_title || documentDraft.filename"></h3>
+          </header>
+          <div class="document-editor-fields">
+            <label class="field"><span>Title</span><input type="text" x-model="documentDraft.display_title"></label>
+            <label class="field"><span>Author</span><input type="text" x-model="documentDraft.author"></label>
+            <label class="field"><span>Work</span><input type="text" x-model="documentDraft.work"></label>
+            <label class="field"><span>Book</span><input type="text" x-model="documentDraft.book"></label>
+            <div class="field-row">
+              <label class="field"><span>Date</span><input type="text" placeholder="1923 or 1900s" x-model="documentDraft.document_date_label"></label>
+              <label class="field"><span>Precision</span><input type="text" placeholder="exact/century" x-model="documentDraft.document_date_precision"></label>
+            </div>
+            <div class="field-row">
+              <label class="field"><span>Language</span><input type="text" placeholder="ota-Latn,tr" x-model="documentDraft.language"></label>
+              <label class="field"><span>Script</span><input type="text" placeholder="latin_extended" x-model="documentDraft.script"></label>
+            </div>
+            <label class="field"><span>License</span><input type="text" placeholder="cc-by-4.0" x-model="documentDraft.license"></label>
+            <label class="field"><span>Source / citation</span><input type="text" x-model="documentDraft.source_citation"></label>
+            <label class="field"><span>Notes</span><input type="text" x-model="documentDraft.notes"></label>
+          </div>
+          <footer class="document-editor-actions">
+            <button class="btn btn-primary" :disabled="savingDocument" @click="saveSelectedDocument">
+              <span x-show="!savingDocument">Save metadata</span>
+              <span x-show="savingDocument">Saving...</span>
+            </button>
+          </footer>
+        </aside>
       </div>
     </div>
 

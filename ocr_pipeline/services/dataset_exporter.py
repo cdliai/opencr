@@ -1,7 +1,7 @@
 import hashlib
 import json
 import zipfile
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 import pyarrow as pa
@@ -29,6 +29,7 @@ class DocumentExport:
     metadata: DocumentMetadata
     document_id: str
     artifact_paths: ArtifactPaths
+    catalog_metadata: dict = field(default_factory=dict)
 
 
 class DatasetExporter:
@@ -53,6 +54,14 @@ class DatasetExporter:
             return "validation"
         return "test"
 
+    @staticmethod
+    def _language_list(value) -> list[str]:
+        if isinstance(value, list):
+            return [str(v).strip() for v in value if str(v).strip()]
+        if not value:
+            return []
+        return [part.strip() for part in str(value).split(",") if part.strip()]
+
     def export_run(
         self,
         run_id: str,
@@ -66,6 +75,7 @@ class DatasetExporter:
 
         for entry in documents:
             doc_meta = entry.metadata
+            catalog = entry.catalog_metadata or {}
             paths = entry.artifact_paths
             raw_text = paths.raw_txt.read_text(encoding="utf-8") if paths.raw_txt.exists() else ""
             clean_text = paths.clean_txt.read_text(encoding="utf-8") if paths.clean_txt.exists() else ""
@@ -83,6 +93,16 @@ class DatasetExporter:
                         "run_id": run_id,
                         "document_id": entry.document_id,
                         "document_name": doc_meta.filename,
+                        "title": catalog.get("display_title") or catalog.get("title") or doc_meta.pdf_title,
+                        "author": catalog.get("author") or doc_meta.pdf_author,
+                        "work": catalog.get("work"),
+                        "book": catalog.get("book"),
+                        "document_date_label": catalog.get("document_date_label"),
+                        "document_date_precision": catalog.get("document_date_precision"),
+                        "language": self._language_list(catalog.get("language")) or page_meta.detected_languages,
+                        "script": catalog.get("script") or page_meta.primary_script,
+                        "license": catalog.get("license"),
+                        "source_citation": catalog.get("source_citation"),
                         "page_number": page_meta.page_num,
                         "source_pdf_sha256": doc_meta.file_sha256,
                         "raw_text": page_raw_text,
@@ -105,12 +125,23 @@ class DatasetExporter:
                 )
 
             document_rows.append(
-                {
+                    {
                     "dataset_export_id": export_id,
                     "run_id": run_id,
-                    "document_id": entry.document_id,
-                    "document_name": doc_meta.filename,
-                    "source_pdf_sha256": doc_meta.file_sha256,
+                        "document_id": entry.document_id,
+                        "document_name": doc_meta.filename,
+                        "title": catalog.get("display_title") or catalog.get("title") or doc_meta.pdf_title,
+                        "author": catalog.get("author") or doc_meta.pdf_author,
+                        "work": catalog.get("work"),
+                        "book": catalog.get("book"),
+                        "document_date_label": catalog.get("document_date_label"),
+                        "document_date_precision": catalog.get("document_date_precision"),
+                        "language": self._language_list(catalog.get("language")) or doc_meta.languages_detected,
+                        "script": catalog.get("script") or doc_meta.dominant_script,
+                        "license": catalog.get("license"),
+                        "source_citation": catalog.get("source_citation"),
+                        "notes": catalog.get("notes"),
+                        "source_pdf_sha256": doc_meta.file_sha256,
                     "page_count": doc_meta.total_pages,
                     "raw_text": raw_text,
                     "clean_text": clean_text,

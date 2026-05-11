@@ -227,8 +227,14 @@ class RunOrchestrator:
             return None
         await self.db.update_run(run_id, stage="exporting")
         await self._emit(run_id, "dataset_export_started", {})
-        exports = [DocumentExport(metadata=m, document_id=did, artifact_paths=p)
-                   for (did, p, m) in documents_meta]
+        exports = []
+        for did, paths, meta in documents_meta:
+            exports.append(DocumentExport(
+                metadata=meta,
+                document_id=did,
+                artifact_paths=paths,
+                catalog_metadata=await self.db.get_document(did) or {},
+            ))
         result = await asyncio.to_thread(
             DatasetExporter(self.storage.dataset_dir(run_id)).export_run,
             run_id, exports,

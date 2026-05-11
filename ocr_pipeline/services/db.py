@@ -10,6 +10,38 @@ import aiosqlite
 logger = logging.getLogger("ocr_pipeline.db")
 
 
+DOCUMENT_METADATA_FIELDS = {
+    "display_title",
+    "author",
+    "work",
+    "book",
+    "document_date_label",
+    "document_date_precision",
+    "language",
+    "script",
+    "license",
+    "source_citation",
+    "notes",
+    "tags_json",
+}
+
+DOCUMENT_METADATA_COLUMNS = {
+    "display_title": "TEXT",
+    "author": "TEXT",
+    "work": "TEXT",
+    "book": "TEXT",
+    "document_date_label": "TEXT",
+    "document_date_precision": "TEXT",
+    "language": "TEXT",
+    "script": "TEXT",
+    "license": "TEXT",
+    "source_citation": "TEXT",
+    "notes": "TEXT",
+    "tags_json": "TEXT",
+    "catalog_updated_at": "TEXT",
+}
+
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
     id TEXT PRIMARY KEY,
@@ -43,6 +75,19 @@ CREATE TABLE IF NOT EXISTS documents (
     pdf_author TEXT,
     pdf_creation_date TEXT,
     pdf_producer TEXT,
+    display_title TEXT,
+    author TEXT,
+    work TEXT,
+    book TEXT,
+    document_date_label TEXT,
+    document_date_precision TEXT,
+    language TEXT,
+    script TEXT,
+    license TEXT,
+    source_citation TEXT,
+    notes TEXT,
+    tags_json TEXT,
+    catalog_updated_at TEXT,
     first_seen_at TEXT NOT NULL,
     last_seen_at TEXT NOT NULL
 );
@@ -139,6 +184,7 @@ class Database:
         await self._conn.execute("PRAGMA journal_mode=WAL;")
         await self._conn.execute("PRAGMA foreign_keys=ON;")
         await self._conn.executescript(SCHEMA)
+        await self._migrate()
         await self._conn.commit()
         logger.info("Database ready at %s", self.db_path)
 
@@ -152,6 +198,14 @@ class Database:
         if self._conn is None:
             raise RuntimeError("Database not connected; call connect() first.")
         return self._conn
+
+    async def _migrate(self) -> None:
+        """Apply additive migrations for existing local SQLite catalogs."""
+        async with self.conn.execute("PRAGMA table_info(documents)") as cur:
+            existing = {row["name"] for row in await cur.fetchall()}
+        for name, column_type in DOCUMENT_METADATA_COLUMNS.items():
+            if name not in existing:
+                await self.conn.execute(f"ALTER TABLE documents ADD COLUMN {name} {column_type}")
 
     @asynccontextmanager
     async def cursor(self) -> AsyncIterator[aiosqlite.Cursor]:
@@ -269,6 +323,8 @@ class Database:
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 filename = excluded.filename,
+                source_path = excluded.source_path,
+                file_size_bytes = excluded.file_size_bytes,
                 last_seen_at = excluded.last_seen_at,
                 total_pages = COALESCE(excluded.total_pages, documents.total_pages),
                 pdf_title = COALESCE(excluded.pdf_title, documents.pdf_title),
@@ -299,6 +355,86 @@ class Database:
             "SELECT * FROM documents WHERE id = ?", (document_id,)
         ) as cur:
             return _row_to_dict(await cur.fetchone())
+
+    async def list_documents(self, limit: int = 500) -> list[dict[str, Any]]:
+        async with self.conn.execute(
+            """
+            SELECT d.id, d.filename, d.source_path, d.file_sha256, d.file_size_bytes,
+                   d.total_pages, d.pdf_title, d.pdf_author, d.pdf_creation_date, d.pdf_producer,
+                   d.author, d.work, d.book, d.document_date_label, d.document_date_precision,
+                   d.language, d.script, d.license, d.source_citation, d.notes, d.tags_json,
+                   d.catalog_updated_at, d.first_seen_at, d.last_seen_at,
+                   COALESCE(NULLIF(d.display_title, ''), NULLIF(d.pdf_title, ''), d.filename)
+                       AS display_title,
+                   CASE
+                     WHEN COALESCE(d.author, '') != ''
+                      AND COALESCE(d.work, '') != ''
+                      AND COALESCE(d.document_date_label, '') != ''
+                      AND COALESCE(d.document_date_precision, '') != ''
+                      AND COALESCE(d.language, '') != ''
+                      AND COALESCE(d.script, '') != ''
+                      AND COALESCE(d.license, '') != ''
+                     THEN 1 ELSE 0
+                   END AS metadata_complete,
+                   (
+                     SELECT r.id
+                     FROM run_documents rd
+                     JOIN runs r ON r.id = rd.run_id
+                     WHERE rd.document_id = d.id
+                     ORDER BY r.created_at DESC
+                     LIMIT 1
+                   ) AS latest_run_id,
+                   (
+                     SELECT r.status
+                     FROM run_documents rd
+                     JOIN runs r ON r.id = rd.run_id
+                     WHERE rd.document_id = d.id
+                     ORDER BY r.created_at DESC
+                     LIMIT 1
+                   ) AS latest_run_status
+            FROM documents d
+            ORDER BY d.last_seen_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ) as cur:
+            rows = await cur.fetchall()
+            return [_row_to_dict(r) for r in rows]  # type: ignore[misc]
+
+    async def update_document_metadata(self, document_id: str, **fields: Any) -> dict[str, Any]:
+        clean = {k: v for k, v in fields.items() if k in DOCUMENT_METADATA_FIELDS}
+        if clean:
+            clean["catalog_updated_at"] = _now()
+            cols = ", ".join(f"{k} = ?" for k in clean)
+            values = [*clean.values(), document_id]
+            cur = await self.conn.execute(
+                f"UPDATE documents SET {cols} WHERE id = ?",
+                values,
+            )
+            await self.conn.commit()
+            affected = cur.rowcount or 0
+            await cur.close()
+            if not affected:
+                raise KeyError(document_id)
+
+        doc = await self.get_document(document_id)
+        if not doc:
+            raise KeyError(document_id)
+        return doc
+
+    async def list_document_runs(self, document_id: str) -> list[dict[str, Any]]:
+        async with self.conn.execute(
+            """
+            SELECT r.*, rd.status AS document_status, rd.pages_pass, rd.pages_warn, rd.pages_fail
+            FROM run_documents rd
+            JOIN runs r ON r.id = rd.run_id
+            WHERE rd.document_id = ?
+            ORDER BY r.created_at DESC
+            """,
+            (document_id,),
+        ) as cur:
+            rows = await cur.fetchall()
+            return [_row_to_dict(r) for r in rows]  # type: ignore[misc]
 
     async def get_document_by_sha(self, file_sha256: str) -> Optional[dict[str, Any]]:
         async with self.conn.execute(

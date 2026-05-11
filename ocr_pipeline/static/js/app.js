@@ -32,6 +32,12 @@ function opencrApp() {
     selectedRunId: null,
     selectedRun: null,
 
+    documents: [],
+    selectedDocumentIds: [],
+    selectedDocumentId: null,
+    documentDraft: {},
+    savingDocument: false,
+
     inputFiles: [],
     selectedPaths: [],
     intakeOptions: { stripRefs: false, exportParquet: true, name: '' },
@@ -50,6 +56,7 @@ function opencrApp() {
         this.refreshHealth(),
         this.refreshMetrics(),
         this.refreshInputFiles(),
+        this.refreshDocuments(),
         this.refreshRuns(),
         this.refreshAuth(),
       ]);
@@ -98,6 +105,15 @@ function opencrApp() {
     async refreshInputFiles() {
       try { this.inputFiles = await API.listInputFiles(); }
       catch (e) { this.toast(`Failed to load inputs: ${e.message}`, 'error'); }
+    },
+
+    async refreshDocuments() {
+      try {
+        this.documents = await API.listDocuments();
+        if (!this.selectedDocumentId && this.documents.length > 0) this.selectDocument(this.documents[0].id);
+      } catch (e) {
+        this.toast(`Failed to load documents: ${e.message}`, 'error');
+      }
     },
 
     async refreshRuns() {
@@ -226,6 +242,70 @@ function opencrApp() {
     pageStatusClass(status) { return PAGE_STATUS[status] || 'page-pending'; },
     runStatusClass(status) { return STATUS_PILL[status] || 'pill-muted'; },
 
+    selectedDocument() {
+      return this.documents.find(d => d.id === this.selectedDocumentId) || null;
+    },
+
+    selectDocument(documentId) {
+      this.selectedDocumentId = documentId;
+      const doc = this.selectedDocument();
+      this.documentDraft = doc ? { ...doc } : {};
+    },
+
+    toggleDocument(documentId) {
+      const i = this.selectedDocumentIds.indexOf(documentId);
+      if (i === -1) this.selectedDocumentIds.push(documentId);
+      else this.selectedDocumentIds.splice(i, 1);
+    },
+
+    selectAllDocuments(checked) {
+      this.selectedDocumentIds = checked ? this.documents.map(d => d.id) : [];
+    },
+
+    get allDocumentsSelected() {
+      return this.documents.length > 0 && this.selectedDocumentIds.length === this.documents.length;
+    },
+
+    selectedDocumentPaths() {
+      return this.documents
+        .filter(d => this.selectedDocumentIds.includes(d.id))
+        .map(d => d.source_path);
+    },
+
+    async saveSelectedDocument() {
+      if (!this.selectedDocumentId || this.savingDocument) return;
+      this.savingDocument = true;
+      try {
+        await API.updateDocument(this.selectedDocumentId, {
+          display_title: this.documentDraft.display_title || null,
+          author: this.documentDraft.author || null,
+          work: this.documentDraft.work || null,
+          book: this.documentDraft.book || null,
+          document_date_label: this.documentDraft.document_date_label || null,
+          document_date_precision: this.documentDraft.document_date_precision || null,
+          language: this.documentDraft.language || null,
+          script: this.documentDraft.script || null,
+          license: this.documentDraft.license || null,
+          source_citation: this.documentDraft.source_citation || null,
+          notes: this.documentDraft.notes || null,
+        });
+        await this.refreshDocuments();
+        this.selectDocument(this.selectedDocumentId);
+        this.toast('Document metadata saved', 'success');
+      } catch (e) {
+        this.toast(`Metadata save failed: ${e.message}`, 'error');
+      } finally {
+        this.savingDocument = false;
+      }
+    },
+
+    async startDocumentsRun() {
+      const paths = this.selectedDocumentPaths();
+      if (paths.length === 0) return this.toast('Select documents first', 'error');
+      this.selectedPaths = paths;
+      await this.startNewRun();
+    },
+
     async startNewRun() {
       if (this.selectedPaths.length === 0 || this.creating) return;
       this.creating = true;
@@ -239,6 +319,7 @@ function opencrApp() {
         if (dedup > 0) this.toast(`${dedup} document(s) recognized from prior runs`, 'info');
         this.toast(`Run ${result.run_id} queued`, 'success');
         this.selectedPaths = [];
+        this.selectedDocumentIds = [];
         await this.refreshRuns();
         await this.selectRun(result.run_id);
       } catch (e) {
@@ -301,7 +382,7 @@ function opencrApp() {
       this.uploadProgress = null;
       if (count > 0) {
         this.toast(`Uploaded ${count} file(s)`, 'success');
-        await this.refreshInputFiles();
+        await Promise.all([this.refreshInputFiles(), this.refreshDocuments()]);
       }
     },
 
