@@ -18,8 +18,10 @@ Caveats:
 from __future__ import annotations
 
 import asyncio
+import io
 import logging
 import tempfile
+from contextlib import redirect_stdout
 from importlib.util import find_spec
 from pathlib import Path
 from typing import Any
@@ -206,27 +208,33 @@ class LocalOCREngine:
             image_path = tmp / "page.png"
             image.save(image_path, format="PNG")
 
-            try:
-                result = self._model.infer(
-                    self._tokenizer,
-                    prompt=prompt,
-                    image_file=str(image_path),
-                    output_path=str(tmp),
-                    base_size=1024,
-                    image_size=640,
-                    crop_mode=True,
-                    save_results=False,
-                    test_compress=False,
-                )
-            except TypeError:
-                # Older variants of the remote-code helper had a slightly
-                # different signature; fall back to the minimal kwargs.
-                result = self._model.infer(
-                    self._tokenizer,
-                    prompt=prompt,
-                    image_file=str(image_path),
-                    output_path=str(tmp),
-                )
+            remote_stdout = io.StringIO()
+            with redirect_stdout(remote_stdout):
+                try:
+                    result = self._model.infer(
+                        self._tokenizer,
+                        prompt=prompt,
+                        image_file=str(image_path),
+                        output_path=str(tmp),
+                        base_size=1024,
+                        image_size=640,
+                        crop_mode=True,
+                        save_results=False,
+                        test_compress=False,
+                        eval_mode=True,
+                    )
+                except TypeError:
+                    # Older variants of the remote-code helper had a slightly
+                    # different signature; fall back to the minimal kwargs.
+                    result = self._model.infer(
+                        self._tokenizer,
+                        prompt=prompt,
+                        image_file=str(image_path),
+                        output_path=str(tmp),
+                    )
+
+            if remote_stdout.getvalue():
+                logger.debug("Suppressed verbose model stdout during local inference.")
 
             if isinstance(result, str):
                 return result

@@ -24,13 +24,20 @@ class TextCleaner:
     ]
 
     ARTIFACT_PATTERNS = [
-        re.compile(r"<\|[a-z_]+\|>"),   # Any remaining special tokens
-        re.compile(r"\x00"),            # Null bytes
+        re.compile(r"<\|/?[a-z_]+\|>"),  # Any remaining special tokens
+        re.compile(r"\x00"),             # Null bytes
     ]
 
-    # <|ref|>text<|/ref|>[[x, y, w, h]] — model reference blocks with bounding boxes
+    # <|ref|>text<|/ref|><|det|>[[x, y, w, h]]<|/det|> — grounding boxes
+    # are useful for debugging, but should not leak into clean corpus text.
+    _REF_DET_BLOCK_RE = re.compile(
+        r"<\|ref\|>.*?<\|/ref\|>\s*<\|det\|>\s*\[\[.*?\]\]\s*<\|/det\|>\s*",
+        re.DOTALL,
+    )
+
+    # Older/simple reference block shape without explicit det tags.
     _REF_BLOCK_RE = re.compile(
-        r"<\|ref\|>(.*?)<\|/ref\|>\[\[[\d\s,]+\]\]",
+        r"<\|ref\|>(.*?)<\|/ref\|>\s*\[\[[\d\s,]+\]\]",
         re.DOTALL,
     )
 
@@ -43,8 +50,7 @@ class TextCleaner:
             return ""
 
         text = self._normalize_unicode(text)
-        if strip_refs:
-            text = self._strip_ref_blocks(text)
+        text = self._strip_ref_blocks(text)
         text = self._strip_model_tokens(text)
         text = self._strip_artifacts(text)
         text = self._rejoin_hyphens(text)
@@ -65,7 +71,8 @@ class TextCleaner:
         return text.strip()
 
     def _strip_ref_blocks(self, text: str) -> str:
-        """Remove <|ref|>...<|/ref|>[[bbox]] blocks, keeping the inner text."""
+        """Remove grounding boxes while preserving older inline ref text."""
+        text = self._REF_DET_BLOCK_RE.sub("", text)
         return self._REF_BLOCK_RE.sub(r"\1", text)
 
     def _rejoin_hyphens(self, text: str) -> str:

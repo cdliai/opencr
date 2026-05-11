@@ -44,6 +44,22 @@ class TestModelTokenStripping:
         result = cleaner.clean(text)
         assert "<|grounding|>" not in result
 
+    def test_clean_removes_grounding_boxes_without_dropping_text(self, cleaner):
+        text = (
+            "<|ref|>text<|/ref|><|det|>[[161, 580, 667, 653]]<|/det|>\n"
+            "(Yirmidokuzuncu madde) Saltanat-ı seniyenin asakir-i müs- "
+            "tahfaza ikamesi hukuku."
+        )
+
+        result = cleaner.clean(text)
+
+        assert result == (
+            "(Yirmidokuzuncu madde) Saltanat-ı seniyenin asakir-i müs- "
+            "tahfaza ikamesi hukuku."
+        )
+        assert "<|ref|>" not in result
+        assert "[[161, 580, 667, 653]]" not in result
+
 
 class TestArtifactRemoval:
     def test_strips_remaining_special_tokens(self, cleaner):
@@ -74,6 +90,14 @@ class TestWhitespaceNormalization:
         text = "Line 1\n\n\nLine 2<|im_end|>\x00"
         result = cleaner.clean_fidelity(text)
         assert result == "Line 1\n\n\nLine 2"
+
+    def test_fidelity_clean_can_strip_grounding_boxes(self, cleaner):
+        text = (
+            "<|ref|>text<|/ref|><|det|>[[161, 580, 667, 653]]<|/det|>\n"
+            "Visible line"
+        )
+        result = cleaner.clean_fidelity(text, strip_refs=True)
+        assert result == "Visible line"
 
 
 class TestOCRFixes:

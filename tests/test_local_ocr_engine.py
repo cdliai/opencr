@@ -1,6 +1,7 @@
 import asyncio
 
 import pytest
+from PIL import Image
 
 from ocr_pipeline.services.local_ocr_engine import (
     LocalOCREngine,
@@ -57,3 +58,42 @@ def test_local_attn_forced_flash_requires_flash_attn(monkeypatch):
 
     with pytest.raises(RuntimeError, match="requires `flash_attn`"):
         _resolve_attn_implementation("flash_attention_2", "cuda")
+
+
+def test_local_infer_uses_eval_mode_so_text_is_returned(monkeypatch):
+    LocalOCREngine._instance = None
+    engine = LocalOCREngine()
+    engine._tokenizer = object()
+
+    calls = {}
+
+    class FakeModel:
+        def infer(self, tokenizer, **kwargs):
+            calls.update(kwargs)
+            return "recognized text"
+
+    engine._model = FakeModel()
+
+    result = engine._infer_blocking(Image.new("RGB", (8, 8)), "<image>\nFree OCR.")
+
+    assert result == "recognized text"
+    assert calls["eval_mode"] is True
+    assert calls["save_results"] is False
+
+
+def test_local_infer_suppresses_remote_model_stdout(capsys):
+    LocalOCREngine._instance = None
+    engine = LocalOCREngine()
+    engine._tokenizer = object()
+
+    class FakeModel:
+        def infer(self, tokenizer, **kwargs):
+            print("remote model debug noise")
+            return "recognized text"
+
+    engine._model = FakeModel()
+
+    result = engine._infer_blocking(Image.new("RGB", (8, 8)), "<image>\nFree OCR.")
+
+    assert result == "recognized text"
+    assert "remote model debug noise" not in capsys.readouterr().out
