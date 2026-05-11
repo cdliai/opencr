@@ -10,16 +10,16 @@ For Turkish documents, see: [README.tr.md](./README.tr.md)
 
 ## Why OpenCR?
 
-- **Turkish-first accuracy.** Built around DeepSeek-OCR, it handles Turkish characters and difficult page layouts better than off-the-shelf OCR.
+- **Turkish-first accuracy.** Built around DeepSeek-OCR-2, it handles Turkish characters and difficult page layouts better than off-the-shelf OCR.
 - **Dataset factory.** Outputs are packaged directly as `pages.parquet` + `documents.parquet` with deterministic train/validation/test splits and a HuggingFace dataset card.
 - **Operator console.** A single-page web UI to monitor runs, page-by-page validate quality, retry, and publish to HuggingFace.
-- **Pluggable backends.** Production-grade NVIDIA + vLLM by default; runs in-process on Apple Silicon / CPU for development; or talk to any OpenAI-compatible model server.
+- **GPU-first backend.** Production-grade NVIDIA + vLLM by default, with an optional remote mode for any OpenAI-compatible GPU model server.
 
 ---
 
 ## Quickstart
 
-### Option 1 — Docker (NVIDIA GPU, fastest path to inference)
+### Option 1 — Docker (NVIDIA GPU, primary path)
 
 Requires Docker, an NVIDIA GPU, and the NVIDIA Container Toolkit.
 
@@ -29,27 +29,10 @@ docker compose up -d
 
 Open http://localhost:39672. Drop PDFs in `./input/`, hit **Start OCR run**.
 
-### Option 2 — Apple Silicon / CPU (in-process inference, no GPU needed)
-
-For local development, demos, and small jobs on a Mac or Linux box with no GPU.
-
-```bash
-git clone https://github.com/cdliai/opencr.git
-cd opencr
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r ocr_pipeline/requirements.txt -r requirements-local.txt
-MODEL_BACKEND=local ./scripts/start.sh
-```
-
-Open http://localhost:39672. The DeepSeek-OCR model (~6 GB) downloads 
-on first request and runs in-process via `transformers` on MPS (Apple Silicon) 
-or CPU. Expect **5–30 seconds per page on M-series, much slower on CPU** — 
-fine for development, not for production batch jobs.
-
-### Option 3 — Remote model server (point at any OpenAI-compatible endpoint)
+### Option 2 — Remote model server (point at any OpenAI-compatible endpoint)
 
 If you already run vLLM somewhere, or use OpenRouter, or another endpoint 
-serving DeepSeek-OCR:
+serving DeepSeek-OCR-2:
 
 ```bash
 pip install -r ocr_pipeline/requirements.txt
@@ -64,12 +47,10 @@ Configurable via environment variables (or a `.env` file):
 
 | Variable             | Default                          | Description                                                                                       |
 | -------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `MODEL_BACKEND`      | `vllm`                           | `vllm` (NVIDIA, OpenAI-compatible server), `local` (in-process transformers), `remote` (alias).   |
+| `MODEL_BACKEND`      | `vllm`                           | `vllm` for the bundled NVIDIA model server, or `remote` for another OpenAI-compatible endpoint.   |
 | `MODEL_SERVER_URL`   | `http://ocr-model:39671`         | Base URL for `vllm` / `remote` backends.                                                          |
-| `MODEL_NAME`         | `deepseek-ai/DeepSeek-OCR`       | Model identifier.                                                                                 |
+| `MODEL_NAME`         | `deepseek-ai/DeepSeek-OCR-2`     | Model identifier.                                                                                 |
 | `MODEL_API_KEY`      | `EMPTY`                          | API key for remote endpoints.                                                                     |
-| `LOCAL_DEVICE`       | auto                             | `auto`, `mps`, `cuda`, or `cpu` for the `local` backend.                                          |
-| `LOCAL_ATTN_IMPLEMENTATION` | auto                      | `auto`, `eager`, `sdpa`, or `flash_attention_2`. Auto uses FlashAttention only when `flash_attn` is installed. |
 | `INPUT_DIR`          | `./input` (or `/data/input`)     | Where to read PDFs from.                                                                          |
 | `OUTPUT_DIR`         | `./output` (or `/data/output`)   | Where artifacts and the SQLite DB land.                                                           |
 | `HOST` / `PORT`      | `0.0.0.0` / `39672`              | Where the web console serves.                                                                     |
@@ -117,9 +98,8 @@ Published datasets are tagged `opencr` so they're discoverable via [HuggingFace'
                 ┌───────────────────────────────┐
                 │  Model backend                │
                 │  ┌─────────────────────────┐  │
-                │  │ vllm (NVIDIA, prod)     │  │
-                │  │ local (MPS/CPU, dev)    │  │
-                │  │ remote (any OpenAI URL) │  │
+                │  │ vLLM (NVIDIA, default)  │  │
+                │  │ remote (OpenAI URL)     │  │
                 │  └─────────────────────────┘  │
                 └───────────────────────────────┘
 ```
@@ -146,8 +126,8 @@ Tests live under `tests/`. UI is plain HTML + Alpine.js — no build step.
 ## Contributing
 
 Contributions are welcome — bug reports, Turkish-language 
-test fixtures, benchmarks against other OCR engines, model-backend 
-ports (MLX, llama.cpp), and documentation translations are 
+test fixtures, benchmarks against other OCR engines, deployment 
+recipes, and documentation translations are 
 especially useful. 
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md).

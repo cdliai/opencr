@@ -62,10 +62,7 @@ class BatchProcessor:
         self.writer = OutputWriter()
         self.event_callback = event_callback
         self.strip_refs = strip_refs
-        default_concurrency = (
-            1 if settings.is_local_backend else settings.batch_concurrency
-        )
-        self.page_concurrency = max(1, page_concurrency or default_concurrency)
+        self.page_concurrency = max(1, page_concurrency or settings.batch_concurrency)
 
     async def _emit(self, event: dict) -> None:
         if self.event_callback:

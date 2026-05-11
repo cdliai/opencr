@@ -21,12 +21,77 @@ function emptyInspector() {
 
 function opencrApp() {
   return {
+    activeView: 'documents',
     version: '',
     healthStatus: 'checking...',
     healthClass: '',
+    currentModel: 'deepseek-ai/DeepSeek-OCR-2',
     metrics: {},
 
     auth: { enabled: false, authenticated: false, user: null },
+
+    extractionProfiles: [
+      {
+        id: 'latinized_ottoman_careful',
+        role: 'base profile',
+        status: 'default',
+        engine: 'vLLM',
+        model: 'deepseek-ai/DeepSeek-OCR-2',
+        dpi: '300 / 400',
+        prompt: 'Free OCR or grounded markdown',
+        crop: 'benchmark on/off',
+        cleanup: 'conservative',
+      },
+      {
+        id: 'ottoman_arabic_layout',
+        role: 'candidate',
+        status: 'benchmark',
+        engine: 'vLLM + layout detector',
+        model: 'deepseek-ai/DeepSeek-OCR-2',
+        dpi: '400',
+        prompt: 'grounded markdown',
+        crop: 'on',
+        cleanup: 'conservative',
+      },
+      {
+        id: 'tesseract_turkish_baseline',
+        role: 'baseline',
+        status: 'baseline',
+        engine: 'Tesseract LSTM',
+        model: 'tur',
+        dpi: '300',
+        prompt: 'n/a',
+        crop: 'off',
+        cleanup: 'minimal',
+      },
+    ],
+
+    benchmarkRows: [
+      {
+        documentType: 'Latinized Ottoman',
+        profile: 'latinized_ottoman_careful',
+        cer: 'pending',
+        wer: 'pending',
+        decision: 'measure',
+        best: false,
+      },
+      {
+        documentType: 'Ottoman Arabic print',
+        profile: 'ottoman_arabic_layout',
+        cer: 'pending',
+        wer: 'pending',
+        decision: 'measure',
+        best: false,
+      },
+      {
+        documentType: 'Modern Turkish print',
+        profile: 'tesseract_turkish_baseline',
+        cer: 'pending',
+        wer: 'pending',
+        decision: 'baseline',
+        best: false,
+      },
+    ],
 
     runs: [],
     selectedRunId: null,
@@ -96,9 +161,8 @@ function opencrApp() {
         const data = await API.health();
         this.version = data.pipeline_version || '';
         this.healthStatus = data.model_status || data.status;
-        this.healthClass = data.status === 'ready'
-          ? (data.local_model_cached === false ? 'waiting' : 'ready')
-          : 'waiting';
+        this.currentModel = data.model_name || this.currentModel;
+        this.healthClass = data.status === 'ready' ? 'ready' : 'waiting';
       } catch {
         this.healthStatus = 'offline';
         this.healthClass = 'error';
@@ -137,12 +201,14 @@ function opencrApp() {
     async selectRun(runId) {
       this._stream.disconnect();
       if (!runId) {
+        this.activeView = 'documents';
         this.selectedRunId = null;
         this.selectedRun = null;
         this.selectedRunDocumentIds = [];
         this.inspector = emptyInspector();
         return;
       }
+      this.activeView = 'runs';
       this.selectedRunId = runId;
       try {
         this.selectedRun = await API.getRun(runId);
@@ -271,6 +337,15 @@ function opencrApp() {
 
     pageStatusClass(status) { return PAGE_STATUS[status] || 'page-pending'; },
     runStatusClass(status) { return STATUS_PILL[status] || 'pill-muted'; },
+    profileStatusClass(status) {
+      if (status === 'default') return 'pill-success';
+      if (status === 'benchmark') return 'pill-warn';
+      return 'pill-muted';
+    },
+
+    setActiveView(view) {
+      this.activeView = view;
+    },
 
     documentProcessLabel(doc) {
       const status = doc.latest_run_status;

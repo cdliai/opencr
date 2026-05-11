@@ -21,6 +21,12 @@
       <h1>OpenCR</h1>
     </div>
   </div>
+  <nav class="view-nav" aria-label="OpenCR sections">
+    <button class="nav-tab" :class="{ active: activeView === 'documents' }" @click="setActiveView('documents')">Documents</button>
+    <button class="nav-tab" :class="{ active: activeView === 'runs' }" @click="setActiveView('runs')">Runs</button>
+    <button class="nav-tab" :class="{ active: activeView === 'profiles' }" @click="setActiveView('profiles')">Profiles</button>
+    <button class="nav-tab" :class="{ active: activeView === 'benchmarks' }" @click="setActiveView('benchmarks')">Benchmarks</button>
+  </nav>
   <div class="topbar-meta">
     <div class="metric-strip">
       <div class="metric"><span class="metric-label">Active</span><span class="metric-value" x-text="metrics.active_jobs"></span></div>
@@ -45,10 +51,10 @@
   </div>
 </header>
 
-<main class="console-grid" :class="{ 'document-mode': !selectedRunId }">
+<main class="console-grid" :class="{ 'document-mode': activeView === 'runs' && !selectedRunId, 'solo-mode': activeView !== 'runs' }">
 
   <!-- Left rail: Runs sidebar -->
-  <aside class="rail">
+  <aside class="rail" x-show="activeView === 'runs'">
     <div class="rail-header">
       <h2>Runs</h2>
       <div class="rail-actions">
@@ -87,7 +93,7 @@
   <section class="stage">
 
     <!-- Document workbench when no run selected -->
-    <div class="document-workbench" x-show="!selectedRunId">
+    <div class="document-workbench" x-show="activeView === 'documents'">
       <header class="stage-header">
         <div>
           <h2>Documents</h2>
@@ -215,7 +221,21 @@
     </div>
 
     <!-- Run detail when a run is selected -->
-    <div class="run-detail" x-show="selectedRunId && selectedRun">
+    <div class="run-overview" x-show="activeView === 'runs' && !selectedRunId">
+      <header class="stage-header">
+        <div>
+          <h2>Runs</h2>
+          <p class="stage-sub">Select a run from the rail, or start a new extraction from Documents.</p>
+        </div>
+        <div class="stage-actions">
+          <button class="btn btn-ghost btn-sm" @click="refreshRuns">Refresh</button>
+          <button class="btn btn-primary btn-sm" @click="selectRun(null)">New run</button>
+        </div>
+      </header>
+      <p class="empty-note">Run history is managed from the rail.</p>
+    </div>
+
+    <div class="run-detail" x-show="activeView === 'runs' && selectedRunId && selectedRun">
       <header class="stage-header">
         <div>
           <h2>Run <code x-text="selectedRun?.id"></code></h2>
@@ -312,10 +332,76 @@
       </section>
     </div>
 
+    <div class="profile-console" x-show="activeView === 'profiles'">
+      <header class="stage-header">
+        <div>
+          <h2>OCR Profiles</h2>
+          <p class="stage-sub">Base model: <code>deepseek-ai/DeepSeek-OCR-2</code></p>
+        </div>
+        <div class="stage-actions">
+          <span class="pill pill-active">GPU-first</span>
+          <span class="pill pill-muted" x-text="currentModel"></span>
+        </div>
+      </header>
+
+      <section class="profile-grid">
+        <template x-for="profile in extractionProfiles" :key="profile.id">
+          <article class="profile-card">
+            <div class="profile-card-head">
+              <div>
+                <p class="eyebrow" x-text="profile.role"></p>
+                <h3 x-text="profile.id"></h3>
+              </div>
+              <span class="pill pill-sm" :class="profileStatusClass(profile.status)" x-text="profile.status"></span>
+            </div>
+            <dl class="profile-specs">
+              <div><dt>Engine</dt><dd x-text="profile.engine"></dd></div>
+              <div><dt>Model</dt><dd x-text="profile.model"></dd></div>
+              <div><dt>DPI</dt><dd x-text="profile.dpi"></dd></div>
+              <div><dt>Prompt</dt><dd x-text="profile.prompt"></dd></div>
+              <div><dt>Crop</dt><dd x-text="profile.crop"></dd></div>
+              <div><dt>Cleanup</dt><dd x-text="profile.cleanup"></dd></div>
+            </dl>
+          </article>
+        </template>
+      </section>
+    </div>
+
+    <div class="benchmark-console" x-show="activeView === 'benchmarks'">
+      <header class="stage-header">
+        <div>
+          <h2>Benchmarks</h2>
+          <p class="stage-sub">Same pages, same profiles, measured before choosing defaults per document type.</p>
+        </div>
+        <div class="stage-actions">
+          <span class="pill pill-warn">Evaluation pending</span>
+        </div>
+      </header>
+
+      <section class="benchmark-panel">
+        <div class="benchmark-row benchmark-row-head">
+          <span>Document type</span>
+          <span>Profile</span>
+          <span>CER</span>
+          <span>WER</span>
+          <span>Decision</span>
+        </div>
+        <template x-for="row in benchmarkRows" :key="`${row.documentType}-${row.profile}`">
+          <div class="benchmark-row">
+            <span x-text="row.documentType"></span>
+            <span x-text="row.profile"></span>
+            <code x-text="row.cer"></code>
+            <code x-text="row.wer"></code>
+            <span class="pill pill-sm" :class="row.best ? 'pill-success' : 'pill-muted'" x-text="row.decision"></span>
+          </div>
+        </template>
+      </section>
+    </div>
+
   </section>
 
   <!-- Right: Inspector -->
-  <aside class="inspector" x-show="selectedRunId && inspector.documentId">
+  <aside class="inspector" x-show="activeView === 'runs' && selectedRunId && inspector.documentId">
     <header class="inspector-header">
       <div>
         <p class="eyebrow">Inspector</p>
@@ -382,7 +468,7 @@
     </div>
   </aside>
 
-  <aside class="inspector inspector-empty" x-show="selectedRunId && !inspector.documentId">
+  <aside class="inspector inspector-empty" x-show="activeView === 'runs' && selectedRunId && !inspector.documentId">
     <p class="empty-note">Select a document to inspect.</p>
   </aside>
 

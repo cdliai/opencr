@@ -1,13 +1,8 @@
-# Two profiles ship out of the box:
-#
-#   docker compose --profile gpu up -d   # production: vLLM model server + pipeline (NVIDIA)
-#   docker compose --profile cpu up -d   # CPU/Mac: pipeline only, in-process transformers backend
-#
-# Without an explicit --profile, no services run. Always pick one.
+# GPU-first OpenCR stack: vLLM model server + pipeline.
+# Requires Docker, an NVIDIA GPU, and the NVIDIA Container Toolkit.
 
 services:
   ocr-model:
-    profiles: ["gpu"]
     build: ./ocr-model
     runtime: nvidia
     restart: unless-stopped
@@ -39,7 +34,6 @@ services:
       start_period: 600s
 
   ocr-pipeline:
-    profiles: ["gpu"]
     build: ./ocr_pipeline
     restart: unless-stopped
     ports:
@@ -50,30 +44,12 @@ services:
     environment:
       - MODEL_BACKEND=vllm
       - MODEL_SERVER_URL=http://ocr-model:39671
+      - MODEL_NAME=deepseek-ai/DeepSeek-OCR-2
       - INPUT_DIR=/data/input
       - OUTPUT_DIR=/data/output
     depends_on:
       ocr-model:
         condition: service_healthy
-
-  ocr-pipeline-cpu:
-    profiles: ["cpu"]
-    build:
-      context: .
-      dockerfile: ocr_pipeline/Dockerfile.cpu
-    restart: unless-stopped
-    ports:
-      - "39672:39672"
-    volumes:
-      - ./input:/data/input
-      - ./output:/data/output
-      - hf-cache:/root/.cache/huggingface
-    environment:
-      - MODEL_BACKEND=local
-      - LOCAL_DEVICE=cpu
-      - INPUT_DIR=/data/input
-      - OUTPUT_DIR=/data/output
-      - HF_HOME=/root/.cache/huggingface
 
 volumes:
   hf-cache:

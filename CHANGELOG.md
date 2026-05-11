@@ -2,6 +2,17 @@
 
 All notable changes to OpenCR are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/), and the project follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **Breaking:** OpenCR is GPU-first again. The in-process Apple Silicon / CPU
+  `MODEL_BACKEND=local` path, CPU Docker profile, and local `transformers`
+  dependency file were removed.
+- Default OCR model is now `deepseek-ai/DeepSeek-OCR-2`.
+- `docker compose up -d` now starts the NVIDIA/vLLM stack directly; no compose
+  profile is required.
+
 ## [v1.0.0]
 
 ### Added

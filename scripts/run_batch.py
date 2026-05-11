@@ -60,7 +60,7 @@ async def progress_callback(event: dict):
 
 async def main():
     parser = argparse.ArgumentParser(
-        description="DeepSeek-OCR batch PDF extraction",
+        description="DeepSeek-OCR-2 batch PDF extraction",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(

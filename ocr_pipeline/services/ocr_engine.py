@@ -1,15 +1,9 @@
 """OCR engine abstraction.
 
-Two backends ship today:
-
-- `RemoteOCREngine` calls any OpenAI-compatible `/v1/chat/completions` endpoint
-  (vLLM serving DeepSeek-OCR is the production target; remote endpoints like
-  OpenRouter or a self-hosted shim work the same way).
-- `LocalOCREngine` runs DeepSeek-OCR in-process via `transformers`. Slow but
-  needs no GPU server — used for Apple Silicon / CPU development.
-
-Pick a backend with the `MODEL_BACKEND` env var. `OCREngine()` returns the
-right instance based on `settings.model_backend`.
+OpenCR is GPU-first: `RemoteOCREngine` calls an OpenAI-compatible
+`/v1/chat/completions` endpoint, with vLLM serving DeepSeek-OCR-2 as the
+default production target. `MODEL_BACKEND=remote` can point the same client at
+another compatible GPU service.
 """
 from __future__ import annotations
 
@@ -108,13 +102,5 @@ class RemoteOCREngine:
 
 
 def OCREngine(*args, **kwargs) -> _OCREngineProtocol:
-    """Factory. Returns the engine matching `settings.model_backend`.
-
-    Existing callers do `OCREngine()` so we keep this name as a callable.
-    """
-    if settings.is_local_backend:
-        # Imported lazily so projects without the local extras (transformers,
-        # torch) can still use the remote backend without import errors.
-        from ocr_pipeline.services.local_ocr_engine import LocalOCREngine
-        return LocalOCREngine(*args, **kwargs)
+    """Factory kept for existing callers."""
     return RemoteOCREngine(*args, **kwargs)

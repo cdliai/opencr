@@ -12,7 +12,7 @@ from ocr_pipeline.services.page_analyzer import PageProfile
 class MetadataCollector:
     """Builds metadata during extraction."""
 
-    def __init__(self, model_name: str = "deepseek-ai/DeepSeek-OCR"):
+    def __init__(self, model_name: str = "deepseek-ai/DeepSeek-OCR-2"):
         self.model_name = model_name
         try:
             self._tokenizer = tiktoken.get_encoding("cl100k_base")

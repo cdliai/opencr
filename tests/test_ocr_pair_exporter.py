@@ -38,7 +38,7 @@ def test_ocr_pair_export_writes_images_jsonl_and_manifest(tmp_path):
     result = exporter.export_run(
         run={
             "id": "run-1234",
-            "model_used": "deepseek-ai/DeepSeek-OCR",
+            "model_used": "deepseek-ai/DeepSeek-OCR-2",
             "pipeline_version": "2.0.0",
         },
         documents=[

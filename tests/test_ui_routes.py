@@ -177,3 +177,17 @@ def test_home_uses_document_workbench():
     assert "currentPageQualityFlags()" in app_js
     assert "Quality flags" in html
     assert "saveSelectedDocument()" in app_js
+
+
+def test_home_exposes_profile_and_benchmark_views():
+    repo_root = Path(__file__).parents[1]
+    html = (repo_root / "ocr_pipeline/static/index.html").read_text(encoding="utf-8")
+    app_js = (repo_root / "ocr_pipeline/static/js/app.js").read_text(encoding="utf-8")
+
+    assert 'class="view-nav"' in html
+    assert "Profiles" in html
+    assert "Benchmarks" in html
+    assert "DeepSeek-OCR-2" in html
+    assert "activeView" in app_js
+    assert "extractionProfiles" in app_js
+    assert "benchmarkRows" in app_js

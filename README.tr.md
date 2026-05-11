@@ -4,19 +4,19 @@ OpenCR, özellikle Türkçe metinler, arşiv dökümanları ve karmaşık sayfa 
 
 ## Neden OpenCR?
 
-- **Türkçe Odaklı Doğruluk:** DeepSeek-OCR tabanlı yapısıyla, standart OCR araçlarının zorlandığı Türkçe karakterlerde ve karmaşık sayfa düzenlerinde üstün performans sağlar.
+- **Türkçe Odaklı Doğruluk:** DeepSeek-OCR-2 tabanlı yapısıyla, standart OCR araçlarının zorlandığı Türkçe karakterlerde ve karmaşık sayfa düzenlerinde güçlü bir başlangıç noktası sağlar.
 - **Veri Seti Fabrikası:** Çıkarılan metinleri doğrudan `.parquet` formatında paketler ve tek tıkla HuggingFace'e yüklemeye hazır hale getirir.
 - **Operatör Konsolu:** İşlemleri izlemek, sayfa sayfa kontrol etmek ve hataları düzeltmek için modern bir web arayüzü sunar.
 
 ## Kurulum
 
-### Docker ile Çalıştırma (GPU Gerekir)
+### Docker ile Çalıştırma (NVIDIA GPU Gerekir)
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
-### Lokal Geliştirme ve Web Arayüzü (Apple Silicon / CPU)
-Pipeline arayüzünü Apple bilgisayarınızda veya CPU üzerinde denemek için:
+### Harici Model Sunucusu ile Geliştirme
+Zaten çalışan OpenAI-compatible bir vLLM / GPU endpoint'iniz varsa:
 
 1. **Klasör ve Ortam Hazırlığı:**
    ```bash
@@ -30,13 +30,12 @@ Pipeline arayüzünü Apple bilgisayarınızda veya CPU üzerinde denemek için:
    ```bash
    export INPUT_DIR="./input"
    export OUTPUT_DIR="./output"
-   export PYTHONPATH=$PYTHONPATH:.
-   python3 ocr_pipeline/main.py
+   MODEL_BACKEND=remote MODEL_SERVER_URL="https://your-endpoint" ./scripts/start.sh
    ```
    Erişim: **http://localhost:39672**
 
 ## Mimari
-- **Backend:** vLLM tabanlı DeepSeek-OCR (Ağır iş yükü).
+- **Backend:** vLLM tabanlı DeepSeek-OCR-2 (GPU-first).
 - **Frontend/API:** FastAPI & Alpine.js (Yönetim konsolu).
 
 ---

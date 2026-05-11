@@ -1,7 +1,7 @@
 FROM vllm/vllm-openai:latest
 ENTRYPOINT ["python3", "-m", "vllm.entrypoints.openai.api_server"]
 CMD [ \
-    "--model", "deepseek-ai/DeepSeek-OCR", \
+    "--model", "deepseek-ai/DeepSeek-OCR-2", \
     "--trust-remote-code", \
     "--logits-processors", "vllm.model_executor.models.deepseek_ocr:NGramPerReqLogitsProcessor", \
     "--no-enable-prefix-caching", \

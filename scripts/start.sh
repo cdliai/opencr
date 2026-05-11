@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
-# OpenCR — local dev launcher.
+# OpenCR — GPU-first dev launcher.
 #
-# Defaults to the `local` backend if MODEL_BACKEND is unset and no
-# vLLM-style remote URL is reachable, so `./scripts/start.sh` from a
-# fresh clone Just Works on a Mac.
+# Defaults to a remote/OpenAI-compatible vLLM endpoint on localhost. For the
+# full GPU stack, prefer `docker compose up -d`.
 #
 # Override anything via env vars:
-#   MODEL_BACKEND=local|remote|vllm
-#   MODEL_SERVER_URL=https://your-endpoint
+#   MODEL_BACKEND=remote|vllm
+#   MODEL_SERVER_URL=http://localhost:39671
 #   MODEL_API_KEY=sk-...
 #   INPUT_DIR=./input  OUTPUT_DIR=./output
 #   PORT=39672
@@ -17,12 +16,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 if [[ -z "${MODEL_BACKEND:-}" ]]; then
-  if [[ -n "${MODEL_SERVER_URL:-}" ]]; then
-    export MODEL_BACKEND=remote
-  else
-    export MODEL_BACKEND=local
-  fi
+  export MODEL_BACKEND=remote
 fi
+export MODEL_SERVER_URL="${MODEL_SERVER_URL:-http://localhost:39671}"
 
 export INPUT_DIR="${INPUT_DIR:-$(pwd)/input}"
 export OUTPUT_DIR="${OUTPUT_DIR:-$(pwd)/output}"
