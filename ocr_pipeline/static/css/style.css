@@ -312,6 +312,21 @@ input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent);
   border-bottom: 1px solid var(--border);
 }
 .document-toolbar.drag-over { background: var(--accent-soft); }
+.toolbar-input,
+.toolbar-select {
+  height: 30px;
+  min-width: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface-strong);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.82rem;
+}
+.toolbar-input { padding: 6px 11px; }
+.toolbar-select { padding: 5px 10px; }
+.toolbar-search { flex: 1; max-width: 260px; }
+.toolbar-group { width: 150px; }
 
 .document-table { display: grid; }
 .document-group { display: grid; }
@@ -690,9 +705,11 @@ input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent);
 
 @media (max-width: 720px) {
   .topbar { flex-direction: column; align-items: stretch; gap: 10px; }
+  .document-toolbar { flex-wrap: wrap; }
+  .toolbar-search, .toolbar-group { max-width: none; width: 100%; }
   .document-row { grid-template-columns: 24px minmax(160px, 1fr) 72px 76px; }
   .document-row > :last-child { display: none; }
-  .field-row { grid-template-columns: 1fr; }
+  .document-editor-fields { grid-template-columns: 1fr; }
   .toast-container { right: 10px; left: 10px; }
 }
 

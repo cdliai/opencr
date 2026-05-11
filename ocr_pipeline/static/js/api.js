@@ -63,6 +63,19 @@ const API = {
     return res.json();
   },
 
+  async bulkUpdateDocuments(payload) {
+    const res = await fetch('/api/documents/bulk', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.detail || 'Failed to update documents');
+    }
+    return res.json();
+  },
+
   async createRun(filePaths, { name, stripRefs = false, exportParquet = true } = {}) {
     const res = await fetch('/api/runs', {
       method: 'POST',
@@ -128,6 +141,10 @@ const API = {
 
   datasetDownloadUrl(runId) {
     return `/api/runs/${encodeURIComponent(runId)}/dataset/download`;
+  },
+
+  ocrPairsDownloadUrl(runId, { dpi = 160, textMode = 'clean' } = {}) {
+    return `/api/runs/${encodeURIComponent(runId)}/ocr-pairs/download?dpi=${dpi}&text_mode=${encodeURIComponent(textMode)}`;
   },
 
   async publishToHF(runId, payload) {

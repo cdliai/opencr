@@ -117,6 +117,25 @@
               <input type="checkbox" :checked="allDocumentsSelected" @change="selectAllDocuments($event.target.checked)">
               <span><span x-text="selectedDocumentIds.length"></span> selected</span>
             </label>
+            <input class="toolbar-input toolbar-search"
+                   type="text"
+                   placeholder="Search"
+                   x-model="documentSearch">
+            <select class="toolbar-select" x-model="documentGroupFilter">
+              <option value="">All groups</option>
+              <template x-for="group in availableDocumentGroups()" :key="group">
+                <option :value="group" x-text="group"></option>
+              </template>
+            </select>
+            <input class="toolbar-input toolbar-group"
+                   type="text"
+                   placeholder="Set group"
+                   x-model="bulkGroupPath">
+            <button class="btn btn-ghost btn-sm"
+                    :disabled="selectedDocumentIds.length === 0 || bulkGrouping"
+                    @click="applyBulkGroup">
+              Group
+            </button>
             <button class="btn btn-ghost btn-sm" @click="refreshDocuments">Refresh</button>
             <span class="muted-note" x-show="uploadProgress !== null" x-text="'Uploading ' + uploadProgress + '%'"></span>
           </div>
@@ -237,6 +256,9 @@
       <section class="run-actions" x-show="selectedRun?.status === 'completed'">
         <button class="btn btn-ghost" @click="downloadDataset" x-show="selectedRun?.dataset_bundle">
           ↓ Dataset bundle (zip)
+        </button>
+        <button class="btn btn-ghost" @click="downloadOCRPairs">
+          ↓ OCR pairs (zip)
         </button>
         <button class="btn btn-primary"
                 @click="openHFModal"

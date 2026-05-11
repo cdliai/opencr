@@ -65,6 +65,53 @@ def test_upload_and_list_input(tmp_path, monkeypatch):
         assert patch.json()["metadata_complete"] is True
         assert patch.json()["group_path"] == "Ottoman/Seyahatname"
 
+        bulk = client.patch(
+            "/api/documents/bulk",
+            json={"document_ids": [docs[0]["id"]], "group_path": "Grouped/Batch"},
+        )
+        assert bulk.status_code == 200
+        assert bulk.json()[0]["group_path"] == "Grouped/Batch"
+
+
+def test_duplicate_upload_filenames_keep_distinct_source_paths(tmp_path, monkeypatch):
+    input_dir = tmp_path / "input"
+    output_dir = tmp_path / "output"
+    runs_dir = output_dir / "runs"
+    db_path = output_dir / "opencr.sqlite"
+    input_dir.mkdir()
+    output_dir.mkdir()
+
+    async def fake_wait_for_model_server():
+        model_readiness.ready = True
+        return True
+
+    monkeypatch.setattr(settings, "input_dir", input_dir)
+    monkeypatch.setattr(settings, "output_dir", output_dir)
+    monkeypatch.setattr(settings, "runs_dir", runs_dir)
+    monkeypatch.setattr(settings, "db_path", db_path)
+    monkeypatch.setattr(
+        main_module, "wait_for_model_server", fake_wait_for_model_server
+    )
+    model_readiness.ready = True
+
+    with TestClient(main_module.app) as client:
+        first = client.post(
+            "/api/upload",
+            files={"file": ("sample.pdf", b"%PDF-1.4 first\n", "application/pdf")},
+        )
+        second = client.post(
+            "/api/upload",
+            files={"file": ("sample.pdf", b"%PDF-1.4 second\n", "application/pdf")},
+        )
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert first.json()["path"] != second.json()["path"]
+        assert Path(first.json()["path"]).exists()
+        assert Path(second.json()["path"]).exists()
+
+        docs = client.get("/api/documents").json()
+        assert len({doc["source_path"] for doc in docs}) == 2
+
 
 def test_runs_list_empty_when_no_runs(tmp_path, monkeypatch):
     output_dir = tmp_path / "output"
@@ -113,7 +160,14 @@ def test_home_uses_document_workbench():
     assert "document_date_precision" in html
     assert "group_path" in html
     assert "OCR snapshot" in html
+    assert "OCR pairs" in html
     assert "selectedDocumentIds" in app_js
+    assert "availableDocumentGroups()" in app_js
+    assert "filteredDocuments()" in app_js
     assert "groupedDocuments()" in app_js
+    assert "applyBulkGroup()" in app_js
+    assert "downloadOCRPairs()" in app_js
+    assert "selectedRunDocumentIds" in app_js
+    assert "documentProcessLabel" in app_js
     assert "selectedPageText()" in app_js
     assert "saveSelectedDocument()" in app_js

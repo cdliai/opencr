@@ -36,6 +36,10 @@ function opencrApp() {
     selectedDocumentIds: [],
     selectedDocumentId: null,
     documentDraft: {},
+    documentSearch: '',
+    documentGroupFilter: '',
+    bulkGroupPath: '',
+    bulkGrouping: false,
     savingDocument: false,
 
     inputFiles: [],
@@ -254,9 +258,33 @@ function opencrApp() {
       return this.documents.find(d => d.id === this.selectedDocumentId) || null;
     },
 
+    availableDocumentGroups() {
+      return [...new Set(this.documents.map(d => (d.group_path || '').trim()).filter(Boolean))].sort();
+    },
+
+    filteredDocuments() {
+      const query = this.documentSearch.trim().toLowerCase();
+      return this.documents.filter((doc) => {
+        const group = (doc.group_path || '').trim();
+        if (this.documentGroupFilter && group !== this.documentGroupFilter) return false;
+        if (!query) return true;
+        return [
+          doc.display_title,
+          doc.filename,
+          doc.group_path,
+          doc.author,
+          doc.work,
+          doc.book,
+          doc.document_date_label,
+          doc.language,
+          doc.script,
+        ].some(value => String(value || '').toLowerCase().includes(query));
+      });
+    },
+
     groupedDocuments() {
       const groups = new Map();
-      for (const doc of this.documents) {
+      for (const doc of this.filteredDocuments()) {
         const name = (doc.group_path || '').trim() || 'Ungrouped';
         if (!groups.has(name)) groups.set(name, []);
         groups.get(name).push(doc);
@@ -277,11 +305,17 @@ function opencrApp() {
     },
 
     selectAllDocuments(checked) {
-      this.selectedDocumentIds = checked ? this.documents.map(d => d.id) : [];
+      const visibleIds = this.filteredDocuments().map(d => d.id);
+      if (!checked) {
+        this.selectedDocumentIds = this.selectedDocumentIds.filter(id => !visibleIds.includes(id));
+        return;
+      }
+      this.selectedDocumentIds = [...new Set([...this.selectedDocumentIds, ...visibleIds])];
     },
 
     get allDocumentsSelected() {
-      return this.documents.length > 0 && this.selectedDocumentIds.length === this.documents.length;
+      const visibleIds = this.filteredDocuments().map(d => d.id);
+      return visibleIds.length > 0 && visibleIds.every(id => this.selectedDocumentIds.includes(id));
     },
 
     selectedDocumentPaths() {
@@ -315,6 +349,24 @@ function opencrApp() {
         this.toast(`Metadata save failed: ${e.message}`, 'error');
       } finally {
         this.savingDocument = false;
+      }
+    },
+
+    async applyBulkGroup() {
+      if (this.selectedDocumentIds.length === 0 || this.bulkGrouping) return;
+      this.bulkGrouping = true;
+      try {
+        await API.bulkUpdateDocuments({
+          document_ids: this.selectedDocumentIds,
+          group_path: this.bulkGroupPath || null,
+        });
+        await this.refreshDocuments();
+        if (this.selectedDocumentId) this.selectDocument(this.selectedDocumentId);
+        this.toast('Group updated', 'success');
+      } catch (e) {
+        this.toast(`Group update failed: ${e.message}`, 'error');
+      } finally {
+        this.bulkGrouping = false;
       }
     },
 
@@ -411,6 +463,10 @@ function opencrApp() {
 
     downloadDataset() {
       if (this.selectedRunId) this._download(API.datasetDownloadUrl(this.selectedRunId));
+    },
+
+    downloadOCRPairs() {
+      if (this.selectedRunId) this._download(API.ocrPairsDownloadUrl(this.selectedRunId));
     },
 
     openHFModal() {

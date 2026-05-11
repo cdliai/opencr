@@ -99,6 +99,11 @@ class DocumentUpdate(BaseModel):
     tags_json: Optional[str] = None
 
 
+class BulkDocumentUpdate(BaseModel):
+    document_ids: list[str]
+    group_path: Optional[str] = None
+
+
 class DocumentSummary(BaseModel):
     id: str
     filename: str

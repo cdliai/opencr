@@ -1,6 +1,11 @@
 from fastapi import APIRouter, HTTPException, Path as PathParam, Query
 
-from ocr_pipeline.models.schemas import DocumentSummary, DocumentUpdate, RunSummary
+from ocr_pipeline.models.schemas import (
+    BulkDocumentUpdate,
+    DocumentSummary,
+    DocumentUpdate,
+    RunSummary,
+)
 from ocr_pipeline.routers.runs import _run_summary
 from ocr_pipeline.services.db import get_db
 
@@ -22,6 +27,26 @@ def _document_summary(row: dict) -> DocumentSummary:
 @router.get("/api/documents", response_model=list[DocumentSummary])
 async def list_documents(limit: int = Query(500, ge=1, le=1000)):
     return [_document_summary(d) for d in await get_db().list_documents(limit=limit)]
+
+
+@router.patch("/api/documents/bulk", response_model=list[DocumentSummary])
+async def update_documents_bulk(payload: BulkDocumentUpdate):
+    if not payload.document_ids:
+        raise HTTPException(status_code=400, detail="document_ids must not be empty")
+    db = get_db()
+    for document_id in payload.document_ids:
+        try:
+            await db.update_document_metadata(
+                document_id,
+                group_path=payload.group_path,
+            )
+        except KeyError:
+            raise HTTPException(
+                status_code=404, detail=f"Document not found: {document_id}"
+            )
+    documents = await db.list_documents(limit=1000)
+    selected = {document_id for document_id in payload.document_ids}
+    return [_document_summary(doc) for doc in documents if doc["id"] in selected]
 
 
 @router.get("/api/documents/{document_id}", response_model=DocumentSummary)
