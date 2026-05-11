@@ -73,6 +73,21 @@ def _resolve_dtype(requested: str, device: str):
     return torch.float32
 
 
+def _resolve_attn_implementation(requested: str, device: str) -> str:
+    if requested != "auto":
+        if requested == "flash_attention_2" and find_spec("flash_attn") is None:
+            raise RuntimeError(
+                "LOCAL_ATTN_IMPLEMENTATION=flash_attention_2 requires `flash_attn`. "
+                "Install flash-attn, or unset LOCAL_ATTN_IMPLEMENTATION to use eager "
+                "attention."
+            )
+        return requested
+
+    if device == "cuda" and find_spec("flash_attn") is not None:
+        return "flash_attention_2"
+    return "eager"
+
+
 class LocalOCREngine:
     """In-process DeepSeek-OCR inference via `transformers`.
 
@@ -142,9 +157,10 @@ class LocalOCREngine:
             dtype,
         )
 
-        # eager attention works everywhere; flash-attn-2 is CUDA-only and would
-        # break MPS/CPU loads.
-        attn_impl = "flash_attention_2" if device == "cuda" else "eager"
+        attn_impl = _resolve_attn_implementation(
+            settings.local_attn_implementation, device
+        )
+        logger.info("Using %s attention implementation.", attn_impl)
 
         tokenizer = AutoTokenizer.from_pretrained(
             self.model_name,

@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     # Local backend (Apple Silicon / CPU)
     local_device: Literal["auto", "mps", "cuda", "cpu"] = "auto"
     local_dtype: Literal["auto", "float16", "bfloat16", "float32"] = "auto"
+    local_attn_implementation: Literal["auto", "eager", "sdpa", "flash_attention_2"] = (
+        "auto"
+    )
     local_model_cache: Path = Path.home() / ".cache" / "huggingface"
 
     # Startup readiness (used by the remote backend)

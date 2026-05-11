@@ -69,6 +69,7 @@ Configurable via environment variables (or a `.env` file):
 | `MODEL_NAME`         | `deepseek-ai/DeepSeek-OCR`       | Model identifier.                                                                                 |
 | `MODEL_API_KEY`      | `EMPTY`                          | API key for remote endpoints.                                                                     |
 | `LOCAL_DEVICE`       | auto                             | `auto`, `mps`, `cuda`, or `cpu` for the `local` backend.                                          |
+| `LOCAL_ATTN_IMPLEMENTATION` | auto                      | `auto`, `eager`, `sdpa`, or `flash_attention_2`. Auto uses FlashAttention only when `flash_attn` is installed. |
 | `INPUT_DIR`          | `./input` (or `/data/input`)     | Where to read PDFs from.                                                                          |
 | `OUTPUT_DIR`         | `./output` (or `/data/output`)   | Where artifacts and the SQLite DB land.                                                           |
 | `HOST` / `PORT`      | `0.0.0.0` / `39672`              | Where the web console serves.                                                                     |
