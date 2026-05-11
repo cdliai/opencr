@@ -36,6 +36,7 @@ from ocr_pipeline.services.ocr_pair_exporter import OCRPairExporter
 from ocr_pipeline.services.pdf_renderer import PDFRenderer
 from ocr_pipeline.services.run_orchestrator import get_orchestrator
 from ocr_pipeline.services.startup import model_readiness
+from ocr_pipeline.services.text_bundle_exporter import TextBundleExporter
 
 
 router = APIRouter()
@@ -401,6 +402,68 @@ async def download_ocr_pairs(
         result.bundle,
         media_type="application/zip",
         filename=f"{run_id}-ocr-pairs.zip",
+    )
+
+
+@router.get("/api/runs/{run_id}/text-bundle/download")
+async def download_text_bundle(
+    run_id: str = ID,
+    document_ids: str | None = Query(None),
+):
+    db = get_db()
+    run = await _require_run(run_id)
+    if run["status"] != "completed":
+        raise HTTPException(status_code=409, detail="Run is not yet completed")
+
+    documents = await db.list_run_documents(run_id)
+    selected_ids = {
+        part.strip() for part in (document_ids or "").split(",") if part.strip()
+    } or None
+    if selected_ids:
+        available_ids = {doc["document_id"] for doc in documents}
+        missing = selected_ids - available_ids
+        if missing:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Document not found in run: {sorted(missing)[0]}",
+            )
+
+    pages_by_document = {
+        doc["document_id"]: await db.list_pages(run_id, doc["document_id"])
+        for doc in documents
+    }
+    catalog_by_document = {
+        doc["document_id"]: await db.get_document(doc["document_id"]) or {}
+        for doc in documents
+    }
+    scope = "all"
+    if selected_ids:
+        scope = hashlib.sha256(
+            ",".join(sorted(selected_ids)).encode("utf-8")
+        ).hexdigest()[:12]
+    export_dir = settings.runs_dir / run_id / "dataset" / f"text_bundle_{scope}"
+    cached_bundle = export_dir.with_suffix(".zip")
+    if cached_bundle.exists():
+        return FileResponse(
+            cached_bundle,
+            media_type="application/zip",
+            filename=f"{run_id}-text-bundle.zip",
+        )
+
+    result = await asyncio.to_thread(
+        TextBundleExporter(export_dir).export_run,
+        run=run,
+        documents=documents,
+        pages_by_document=pages_by_document,
+        catalog_by_document=catalog_by_document,
+        document_ids=selected_ids,
+    )
+    if result.pages_count == 0:
+        raise HTTPException(status_code=404, detail="No completed text to export")
+    return FileResponse(
+        result.bundle,
+        media_type="application/zip",
+        filename=f"{run_id}-text-bundle.zip",
     )
 
 

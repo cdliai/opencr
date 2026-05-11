@@ -522,6 +522,15 @@ function opencrApp() {
       }
     },
 
+    downloadTextBundle() {
+      if (this.selectedRunId) {
+        this._download(API.textBundleDownloadUrl(
+          this.selectedRunId,
+          { documentIds: this.selectedRunDocumentIds },
+        ));
+      }
+    },
+
     openHFModal() {
       if (!this.selectedRunId) return;
       if (!this.canPublish) {

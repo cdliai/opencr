@@ -266,6 +266,9 @@
         <button class="btn btn-ghost" @click="downloadOCRPairs">
           <span x-text="selectedRunDocumentIds.length ? `↓ OCR pairs (${selectedRunDocumentIds.length})` : '↓ OCR pairs (zip)'"></span>
         </button>
+        <button class="btn btn-ghost" @click="downloadTextBundle">
+          <span x-text="selectedRunDocumentIds.length ? `↓ Text bundle (${selectedRunDocumentIds.length})` : '↓ Text bundle (zip)'"></span>
+        </button>
         <button class="btn btn-primary"
                 @click="openHFModal"
                 :disabled="!canPublish"

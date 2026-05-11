@@ -161,12 +161,14 @@ def test_home_uses_document_workbench():
     assert "group_path" in html
     assert "OCR snapshot" in html
     assert "OCR pairs" in html
+    assert "Text bundle" in html
     assert "selectedDocumentIds" in app_js
     assert "availableDocumentGroups()" in app_js
     assert "filteredDocuments()" in app_js
     assert "groupedDocuments()" in app_js
     assert "applyBulkGroup()" in app_js
     assert "downloadOCRPairs()" in app_js
+    assert "downloadTextBundle()" in app_js
     assert "selectedRunDocumentIds" in app_js
     assert "documentProcessLabel" in app_js
     assert "retryRun()" in app_js

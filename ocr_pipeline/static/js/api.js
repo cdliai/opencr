@@ -158,6 +158,13 @@ const API = {
     return `/api/runs/${encodeURIComponent(runId)}/ocr-pairs/download?${params.toString()}`;
   },
 
+  textBundleDownloadUrl(runId, { documentIds = [] } = {}) {
+    const params = new URLSearchParams();
+    if (documentIds.length > 0) params.set('document_ids', documentIds.join(','));
+    const suffix = params.toString() ? `?${params.toString()}` : '';
+    return `/api/runs/${encodeURIComponent(runId)}/text-bundle/download${suffix}`;
+  },
+
   async publishToHF(runId, payload) {
     const res = await fetch(`/api/runs/${encodeURIComponent(runId)}/publish/hf`, {
       method: 'POST',
