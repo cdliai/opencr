@@ -82,6 +82,31 @@ class TestModelArtifacts:
         assert result.status == ValidationStatus.FAIL
 
 
+class TestCorpusQualityFlags:
+    def test_line_break_hyphenation_warns_with_machine_flag(self, validator):
+        text = (
+            "Bu metin araştırma için yeterince uzun bir OCR çıktısıdır.\n"
+            "Muahedenin müba-\n"
+            "delesi tarihinden itibaren sekiz ay zarfında hitama erecektir."
+        )
+        result = validator.validate(text, page_num=1)
+
+        assert result.status == ValidationStatus.WARN
+        assert "line_hyphenation" in result.metrics["quality_flags"]
+        assert any("line-break hyphenation" in issue for issue in result.issues)
+
+    def test_markup_leak_warns_with_machine_flag(self, validator):
+        text = (
+            "<center>ANKARA</center>\n"
+            "Bu metin OCR motorunun temiz metne taşıdığı biçimlendirme "
+            "etiketini araştırmacıya görünür kılacak kadar uzundur."
+        )
+        result = validator.validate(text, page_num=1)
+
+        assert result.status == ValidationStatus.WARN
+        assert "markup_leak" in result.metrics["quality_flags"]
+
+
 class TestMetrics:
     def test_metrics_populated(self, validator):
         text = "Line 1\nLine 2\nLine 3\nLine 1\nLine 4\nLine 5\nLine 6\nLine 7\nLine 8\nLine 9"

@@ -12,7 +12,7 @@ router = APIRouter()
 async def health_check():
 
     status = "ready" if model_readiness.ready else "waiting"
-    
+
     resp = HealthResponse(
         status=status,
         pipeline_version=settings.pipeline_version,

@@ -44,6 +44,22 @@ class TestModelTokenStripping:
         result = cleaner.clean(text)
         assert "<|grounding|>" not in result
 
+    def test_clean_removes_grounding_boxes_without_dropping_text(self, cleaner):
+        text = (
+            "<|ref|>text<|/ref|><|det|>[[161, 580, 667, 653]]<|/det|>\n"
+            "(Yirmidokuzuncu madde) Saltanat-ı seniyenin asakir-i müs- "
+            "tahfaza ikamesi hukuku."
+        )
+
+        result = cleaner.clean(text)
+
+        assert result == (
+            "(Yirmidokuzuncu madde) Saltanat-ı seniyenin asakir-i müs- "
+            "tahfaza ikamesi hukuku."
+        )
+        assert "<|ref|>" not in result
+        assert "[[161, 580, 667, 653]]" not in result
+
 
 class TestArtifactRemoval:
     def test_strips_remaining_special_tokens(self, cleaner):
@@ -56,6 +72,30 @@ class TestArtifactRemoval:
         result = cleaner.clean(text)
         assert "\x00" not in result
         assert "HelloWorld" in result
+
+
+class TestHtmlCleanup:
+    def test_converts_html_table_to_plain_text_rows(self, cleaner):
+        text = (
+            "<table><tr><td>Köre almagan yiğittin,</td><td>Göremeyen yiğidin,</td></tr>"
+            "<tr><td>Kökiregi tüyilsin.</td><td>Göğsü duralsın.</td></tr></table>"
+        )
+
+        result = cleaner.clean(text)
+
+        assert result == (
+            "Köre almagan yiğittin, | Göremeyen yiğidin,\n"
+            "Kökiregi tüyilsin. | Göğsü duralsın."
+        )
+        assert "<table" not in result
+        assert "<td" not in result
+
+    def test_unescapes_html_entities(self, cleaner):
+        text = "&quot;Yüzü de ak dana, Şarifulla&#x27;nın giydiği"
+
+        result = cleaner.clean(text)
+
+        assert result == '"Yüzü de ak dana, Şarifulla\'nın giydiği'
 
 
 class TestWhitespaceNormalization:
@@ -74,6 +114,14 @@ class TestWhitespaceNormalization:
         text = "Line 1\n\n\nLine 2<|im_end|>\x00"
         result = cleaner.clean_fidelity(text)
         assert result == "Line 1\n\n\nLine 2"
+
+    def test_fidelity_clean_can_strip_grounding_boxes(self, cleaner):
+        text = (
+            "<|ref|>text<|/ref|><|det|>[[161, 580, 667, 653]]<|/det|>\n"
+            "Visible line"
+        )
+        result = cleaner.clean_fidelity(text, strip_refs=True)
+        assert result == "Visible line"
 
 
 class TestOCRFixes:

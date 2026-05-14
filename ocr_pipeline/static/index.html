@@ -16,12 +16,17 @@
 
 <header class="topbar">
   <div class="brand">
-    <p class="eyebrow">OCR Operations · by cdli.ai</p>
+    <p class="eyebrow">cdli.ai</p>
     <div class="title-row">
       <h1>OpenCR</h1>
-      <span class="version" x-text="version ? 'v' + version : ''"></span>
     </div>
   </div>
+  <nav class="view-nav" aria-label="OpenCR sections">
+    <button class="nav-tab" :class="{ active: activeView === 'documents' }" @click="setActiveView('documents')">Documents</button>
+    <button class="nav-tab" :class="{ active: activeView === 'runs' }" @click="setActiveView('runs')">Runs</button>
+    <button class="nav-tab" :class="{ active: activeView === 'profiles' }" @click="setActiveView('profiles')">Profiles</button>
+    <button class="nav-tab" :class="{ active: activeView === 'benchmarks' }" @click="setActiveView('benchmarks')">Benchmarks</button>
+  </nav>
   <div class="topbar-meta">
     <div class="metric-strip">
       <div class="metric"><span class="metric-label">Active</span><span class="metric-value" x-text="metrics.active_jobs"></span></div>
@@ -46,10 +51,10 @@
   </div>
 </header>
 
-<main class="console-grid">
+<main class="console-grid" :class="{ 'document-mode': activeView === 'runs' && !selectedRunId, 'solo-mode': activeView !== 'runs' }">
 
   <!-- Left rail: Runs sidebar -->
-  <aside class="rail">
+  <aside class="rail" x-show="activeView === 'runs'">
     <div class="rail-header">
       <h2>Runs</h2>
       <div class="rail-actions">
@@ -87,83 +92,150 @@
   <!-- Center: Run detail or intake -->
   <section class="stage">
 
-    <!-- Intake panel when no run selected -->
-    <div class="intake" x-show="!selectedRunId">
+    <!-- Document workbench when no run selected -->
+    <div class="document-workbench" x-show="activeView === 'documents'">
       <header class="stage-header">
-        <h2>Start a new run</h2>
-        <p class="stage-sub">Drop PDFs, pick which to extract, and OpenCR will OCR, validate, and bundle them.</p>
+        <div>
+          <h2>Documents</h2>
+          <p class="stage-sub">Select PDFs, edit metadata, then run extraction.</p>
+        </div>
+        <div class="stage-actions">
+          <button class="btn btn-ghost btn-sm" @click="$refs.fileInput.click()">Upload PDFs</button>
+          <button class="btn btn-primary btn-sm"
+                  :disabled="selectedDocumentIds.length === 0 || creating"
+                  @click="startDocumentsRun">
+            <span x-show="!creating">Start run</span>
+            <span x-show="creating">Starting...</span>
+          </button>
+        </div>
       </header>
 
-      <div class="drop-zone"
-           :class="{ 'drag-over': dragOver }"
-           @dragover.prevent="dragOver = true"
-           @dragleave.prevent="dragOver = false"
-           @drop.prevent="handleDrop($event)"
-           @click="$refs.fileInput.click()">
-        <input type="file" accept=".pdf" multiple x-ref="fileInput" hidden @change="handleFileSelect($event)">
-        <p class="drop-title">Drop PDFs or click to browse</p>
-        <p class="drop-note">Files are deduplicated by content hash. Re-uploading the same PDF is free.</p>
-        <p class="drop-progress" x-show="uploadProgress !== null" x-text="'Uploading ' + uploadProgress + '%'"></p>
-      </div>
+      <input type="file" accept=".pdf" multiple x-ref="fileInput" hidden @change="handleFileSelect($event)">
 
-      <div class="intake-toolbar">
-        <label class="checkbox-row">
-          <input type="checkbox" :checked="allInputsSelected" @change="selectAllInputs($event.target.checked)">
-          <span>Select all</span>
-        </label>
-        <span class="muted-note">
-          <span x-text="selectedPaths.length"></span> of <span x-text="inputFiles.length"></span> selected
-        </span>
-        <button class="btn btn-ghost btn-sm" @click="refreshInputFiles">Refresh inputs</button>
-      </div>
-
-      <ul class="file-list" x-show="inputFiles.length > 0">
-        <template x-for="file in inputFiles" :key="file.path">
-          <li class="file-item">
-            <input type="checkbox"
-                   :checked="selectedPaths.includes(file.path)"
-                   @change="toggleSelected(file.path)">
-            <span class="file-name" x-text="file.name"></span>
-            <span class="file-size" x-text="formatSize(file.size)"></span>
-          </li>
-        </template>
-      </ul>
-      <p class="empty-note" x-show="inputFiles.length === 0">No PDFs in input directory. Upload above.</p>
-
-      <div class="intake-options">
-        <label class="field">
-          <span>Run name (optional)</span>
-          <input type="text" placeholder="e.g. arabic-corpus-batch-3" x-model="intakeOptions.name">
-        </label>
-        <label class="option-toggle">
-          <input type="checkbox" x-model="intakeOptions.stripRefs">
-          <div>
-            <strong>Strip reference blocks</strong>
-            <p>Remove DeepSeek bounding-box markup from cleaned text.</p>
+      <div class="document-workbench-body">
+        <section class="document-library">
+          <div class="document-toolbar"
+               :class="{ 'drag-over': dragOver }"
+               @dragover.prevent="dragOver = true"
+               @dragleave.prevent="dragOver = false"
+               @drop.prevent="handleDrop($event)">
+            <label class="checkbox-row">
+              <input type="checkbox" :checked="allDocumentsSelected" @change="selectAllDocuments($event.target.checked)">
+              <span><span x-text="selectedDocumentIds.length"></span> selected</span>
+            </label>
+            <input class="toolbar-input toolbar-search"
+                   type="text"
+                   placeholder="Search"
+                   x-model="documentSearch">
+            <select class="toolbar-select" x-model="documentGroupFilter">
+              <option value="">All groups</option>
+              <template x-for="group in availableDocumentGroups()" :key="group">
+                <option :value="group" x-text="group"></option>
+              </template>
+            </select>
+            <input class="toolbar-input toolbar-group"
+                   type="text"
+                   placeholder="Set group"
+                   x-model="bulkGroupPath">
+            <button class="btn btn-ghost btn-sm"
+                    :disabled="selectedDocumentIds.length === 0 || bulkGrouping"
+                    @click="applyBulkGroup">
+              Group
+            </button>
+            <button class="btn btn-ghost btn-sm" @click="refreshDocuments">Refresh</button>
+            <span class="muted-note" x-show="uploadProgress !== null" x-text="'Uploading ' + uploadProgress + '%'"></span>
           </div>
-        </label>
-        <label class="option-toggle">
-          <input type="checkbox" x-model="intakeOptions.exportParquet">
-          <div>
-            <strong>Export Parquet bundle</strong>
-            <p>Build train/validation/test-split Parquet for HuggingFace.</p>
-          </div>
-        </label>
-      </div>
 
-      <div class="intake-cta">
-        <button class="btn btn-primary"
-                :disabled="selectedPaths.length === 0 || creating"
-                @click="startNewRun">
-          <span x-show="!creating">Start OCR run</span>
-          <span x-show="creating">Starting...</span>
-        </button>
-        <p class="muted-note">Pages process concurrently — large PDFs land fast.</p>
+          <div class="document-table" x-show="documents.length > 0">
+            <div class="document-row document-row-head">
+              <span></span>
+              <span>Document</span>
+              <span>Date</span>
+              <span>Metadata</span>
+              <span>Last run</span>
+            </div>
+            <template x-for="group in groupedDocuments()" :key="group.name">
+              <div class="document-group">
+                <div class="document-group-head" x-show="group.name !== 'Ungrouped'">
+                  <span x-text="group.name"></span>
+                  <span x-text="group.items.length"></span>
+                </div>
+                <template x-for="doc in group.items" :key="doc.id">
+                  <div class="document-row"
+                       :class="{ active: selectedDocumentId === doc.id }"
+                       @click="selectDocument(doc.id)">
+                    <input type="checkbox"
+                           :checked="selectedDocumentIds.includes(doc.id)"
+                           @click.stop
+                           @change="toggleDocument(doc.id)">
+                    <div class="document-title">
+                      <strong x-text="doc.display_title || doc.filename"></strong>
+                      <span x-text="doc.filename"></span>
+                    </div>
+                    <span x-text="doc.document_date_label || '—'"></span>
+                    <span class="pill pill-sm"
+                          :class="doc.metadata_complete ? 'pill-success' : 'pill-warn'"
+                          x-text="doc.metadata_complete ? 'ready' : 'missing'"></span>
+                    <span class="pill pill-sm"
+                          :class="documentProcessClass(doc)"
+                          x-text="documentProcessLabel(doc)"></span>
+                  </div>
+                </template>
+              </div>
+            </template>
+          </div>
+          <p class="empty-note" x-show="documents.length === 0">No PDFs yet. Upload PDFs to start the catalog.</p>
+        </section>
+
+        <aside class="document-editor" x-show="selectedDocumentId">
+          <header class="document-editor-head">
+            <p class="eyebrow">Document metadata</p>
+            <h3 x-text="documentDraft.display_title || documentDraft.filename"></h3>
+          </header>
+          <div class="document-editor-fields">
+            <label class="field field-wide"><span>Title</span><input type="text" x-model="documentDraft.display_title"></label>
+            <label class="field"><span>Group</span><input type="text" placeholder="Collection/Folder" x-model="documentDraft.group_path"></label>
+            <label class="field"><span>Author</span><input type="text" x-model="documentDraft.author"></label>
+            <label class="field"><span>Work</span><input type="text" x-model="documentDraft.work"></label>
+            <label class="field"><span>Book</span><input type="text" x-model="documentDraft.book"></label>
+            <div class="field-row">
+              <label class="field"><span>Date</span><input type="text" placeholder="1923 or 1900s" x-model="documentDraft.document_date_label"></label>
+              <label class="field"><span>Precision</span><input type="text" placeholder="exact/century" x-model="documentDraft.document_date_precision"></label>
+            </div>
+            <div class="field-row">
+              <label class="field"><span>Language</span><input type="text" placeholder="ota-Latn,tr" x-model="documentDraft.language"></label>
+              <label class="field"><span>Script</span><input type="text" placeholder="latin_extended" x-model="documentDraft.script"></label>
+            </div>
+            <label class="field"><span>License</span><input type="text" placeholder="cc-by-4.0" x-model="documentDraft.license"></label>
+            <label class="field field-wide"><span>Source / citation</span><input type="text" x-model="documentDraft.source_citation"></label>
+            <label class="field field-wide"><span>Notes</span><input type="text" x-model="documentDraft.notes"></label>
+          </div>
+          <footer class="document-editor-actions">
+            <button class="btn btn-primary" :disabled="savingDocument" @click="saveSelectedDocument">
+              <span x-show="!savingDocument">Save metadata</span>
+              <span x-show="savingDocument">Saving...</span>
+            </button>
+          </footer>
+        </aside>
       </div>
     </div>
 
     <!-- Run detail when a run is selected -->
-    <div class="run-detail" x-show="selectedRunId && selectedRun">
+    <div class="run-overview" x-show="activeView === 'runs' && !selectedRunId">
+      <header class="stage-header">
+        <div>
+          <h2>Runs</h2>
+          <p class="stage-sub">Select a run from the rail, or start a new extraction from Documents.</p>
+        </div>
+        <div class="stage-actions">
+          <button class="btn btn-ghost btn-sm" @click="refreshRuns">Refresh</button>
+          <button class="btn btn-primary btn-sm" @click="selectRun(null)">New run</button>
+        </div>
+      </header>
+      <p class="empty-note">Run history is managed from the rail.</p>
+    </div>
+
+    <div class="run-detail" x-show="activeView === 'runs' && selectedRunId && selectedRun">
       <header class="stage-header">
         <div>
           <h2>Run <code x-text="selectedRun?.id"></code></h2>
@@ -172,38 +244,50 @@
         <div class="stage-actions">
           <span class="pill" :class="runStatusClass(selectedRun?.status)" x-text="selectedRun?.status"></span>
           <button class="btn btn-ghost btn-sm" @click="refreshSelectedRun">Refresh</button>
+          <button class="btn btn-primary btn-sm"
+                  :disabled="creating"
+                  @click="retryRun"
+                  x-show="selectedRun?.status === 'failed'">Retry incomplete</button>
           <button class="btn btn-ghost btn-sm" @click="deleteSelectedRun" x-show="selectedRun?.status !== 'processing'">Delete</button>
         </div>
       </header>
 
-      <section class="run-summary">
-        <div class="summary-card">
-          <span class="summary-label">Progress</span>
-          <strong x-text="Math.round((selectedRun?.progress || 0) * 100) + '%'"></strong>
-          <div class="progress-track" x-show="selectedRun?.status === 'processing' || selectedRun?.status === 'completed'">
-            <div class="progress-fill" :style="`width:${(selectedRun?.progress || 0) * 100}%`"></div>
+      <section class="run-terminal" aria-label="Run extraction progress">
+        <div class="run-terminal-head">
+          <div class="run-terminal-status">
+            <span class="run-spinner" x-show="['queued', 'processing'].includes(selectedRun?.status)"></span>
+            <span class="run-terminal-label" x-text="selectedRun?.stage || selectedRun?.status || 'idle'"></span>
           </div>
+          <code x-text="runDocumentProgressLabel()"></code>
         </div>
-        <div class="summary-card">
-          <span class="summary-label">Pages</span>
-          <strong>
-            <span x-text="selectedRun?.pages_completed || 0"></span>
-            <span class="muted-note">/ <span x-text="selectedRun?.pages_total || 0"></span></span>
-          </strong>
+        <div class="run-terminal-bar">
+          <div class="run-terminal-fill" :style="`width:${runProgressPercent()}%`"></div>
         </div>
-        <div class="summary-card">
-          <span class="summary-label">Stage</span>
-          <strong x-text="selectedRun?.stage || '—'"></strong>
-        </div>
-        <div class="summary-card">
-          <span class="summary-label">Started</span>
-          <strong x-text="formatTimestamp(selectedRun?.started_at || selectedRun?.created_at)"></strong>
+        <div class="run-terminal-body">
+          <p>
+            <span class="terminal-key">document</span>
+            <span x-text="currentRunDocument()?.filename || 'waiting'"></span>
+          </p>
+          <p>
+            <span class="terminal-key">pages</span>
+            <span x-text="runPageProgressLabel()"></span>
+          </p>
+          <p>
+            <span class="terminal-key">stats</span>
+            <span x-text="runStatsLabel()"></span>
+          </p>
         </div>
       </section>
 
       <section class="run-actions" x-show="selectedRun?.status === 'completed'">
         <button class="btn btn-ghost" @click="downloadDataset" x-show="selectedRun?.dataset_bundle">
           ↓ Dataset bundle (zip)
+        </button>
+        <button class="btn btn-ghost" @click="downloadOCRPairs">
+          <span x-text="selectedRunDocumentIds.length ? `↓ OCR pairs (${selectedRunDocumentIds.length})` : '↓ OCR pairs (zip)'"></span>
+        </button>
+        <button class="btn btn-ghost" @click="downloadTextBundle">
+          <span x-text="selectedRunDocumentIds.length ? `↓ Text bundle (${selectedRunDocumentIds.length})` : '↓ Text bundle (zip)'"></span>
         </button>
         <button class="btn btn-primary"
                 @click="openHFModal"
@@ -225,7 +309,12 @@
                 :class="{ active: inspector.documentId === doc.document_id }"
                 @click="openDocument(doc.document_id)">
               <div class="doc-head">
-                <span class="doc-name" x-text="doc.filename"></span>
+                <label class="checkbox-row" @click.stop>
+                  <input type="checkbox"
+                         :checked="selectedRunDocumentIds.includes(doc.document_id)"
+                         @change="toggleRunDocument(doc.document_id)">
+                  <span class="doc-name" x-text="doc.filename"></span>
+                </label>
                 <span class="pill pill-sm"
                       :class="runStatusClass(doc.status)"
                       x-text="doc.status"></span>
@@ -236,17 +325,6 @@
                 <span x-text="`${doc.pages_pass}P / ${doc.pages_warn}W / ${doc.pages_fail}F`"></span>
                 <span class="muted-note" x-show="doc.dominant_script"> · <span x-text="doc.dominant_script"></span></span>
               </div>
-              <div class="heatmap" x-show="doc.total_pages">
-                <template x-for="p in doc.total_pages" :key="p">
-                  <span class="heat-cell"
-                        :class="(() => {
-                          const pages = inspector.documentId === doc.document_id ? (inspector.document?.pages || []) : [];
-                          const found = pages.find(pp => pp.page_num === p);
-                          return found ? pageStatusClass(found.status) : 'page-pending';
-                        })()"
-                        :title="`Page ${p}`"></span>
-                </template>
-              </div>
             </li>
           </template>
         </ul>
@@ -254,10 +332,76 @@
       </section>
     </div>
 
+    <div class="profile-console" x-show="activeView === 'profiles'">
+      <header class="stage-header">
+        <div>
+          <h2>OCR Profiles</h2>
+          <p class="stage-sub">Base model: <code>deepseek-ai/DeepSeek-OCR-2</code></p>
+        </div>
+        <div class="stage-actions">
+          <span class="pill pill-active">GPU-first</span>
+          <span class="pill pill-muted" x-text="currentModel"></span>
+        </div>
+      </header>
+
+      <section class="profile-grid">
+        <template x-for="profile in extractionProfiles" :key="profile.id">
+          <article class="profile-card">
+            <div class="profile-card-head">
+              <div>
+                <p class="eyebrow" x-text="profile.role"></p>
+                <h3 x-text="profile.id"></h3>
+              </div>
+              <span class="pill pill-sm" :class="profileStatusClass(profile.status)" x-text="profile.status"></span>
+            </div>
+            <dl class="profile-specs">
+              <div><dt>Engine</dt><dd x-text="profile.engine"></dd></div>
+              <div><dt>Model</dt><dd x-text="profile.model"></dd></div>
+              <div><dt>DPI</dt><dd x-text="profile.dpi"></dd></div>
+              <div><dt>Prompt</dt><dd x-text="profile.prompt"></dd></div>
+              <div><dt>Crop</dt><dd x-text="profile.crop"></dd></div>
+              <div><dt>Cleanup</dt><dd x-text="profile.cleanup"></dd></div>
+            </dl>
+          </article>
+        </template>
+      </section>
+    </div>
+
+    <div class="benchmark-console" x-show="activeView === 'benchmarks'">
+      <header class="stage-header">
+        <div>
+          <h2>Benchmarks</h2>
+          <p class="stage-sub">Same pages, same profiles, measured before choosing defaults per document type.</p>
+        </div>
+        <div class="stage-actions">
+          <span class="pill pill-warn">Evaluation pending</span>
+        </div>
+      </header>
+
+      <section class="benchmark-panel">
+        <div class="benchmark-row benchmark-row-head">
+          <span>Document type</span>
+          <span>Profile</span>
+          <span>CER</span>
+          <span>WER</span>
+          <span>Decision</span>
+        </div>
+        <template x-for="row in benchmarkRows" :key="`${row.documentType}-${row.profile}`">
+          <div class="benchmark-row">
+            <span x-text="row.documentType"></span>
+            <span x-text="row.profile"></span>
+            <code x-text="row.cer"></code>
+            <code x-text="row.wer"></code>
+            <span class="pill pill-sm" :class="row.best ? 'pill-success' : 'pill-muted'" x-text="row.decision"></span>
+          </div>
+        </template>
+      </section>
+    </div>
+
   </section>
 
   <!-- Right: Inspector -->
-  <aside class="inspector" x-show="selectedRunId && inspector.documentId">
+  <aside class="inspector" x-show="activeView === 'runs' && selectedRunId && inspector.documentId">
     <header class="inspector-header">
       <div>
         <p class="eyebrow">Inspector</p>
@@ -293,7 +437,26 @@
     </div>
 
     <div class="inspector-text">
-      <pre x-text="inspector.text || '(empty)'"></pre>
+      <div class="inspector-text-head">
+        <span>OCR snapshot</span>
+        <code x-text="`page ${inspector.pageNum}`"></code>
+      </div>
+      <div class="page-quality"
+           x-show="currentPageQualityFlags().length || currentPageIssues().length">
+        <div x-show="currentPageQualityFlags().length">
+          <span>Quality flags</span>
+          <template x-for="flag in currentPageQualityFlags()" :key="flag">
+            <code x-text="flag"></code>
+          </template>
+        </div>
+        <div x-show="currentPageIssues().length">
+          <span>Issues</span>
+          <template x-for="issue in currentPageIssues()" :key="issue">
+            <code x-text="issue"></code>
+          </template>
+        </div>
+      </div>
+      <pre x-text="selectedPageText() || '(empty)'"></pre>
     </div>
 
     <div class="inspector-footer">
@@ -305,7 +468,7 @@
     </div>
   </aside>
 
-  <aside class="inspector inspector-empty" x-show="selectedRunId && !inspector.documentId">
+  <aside class="inspector inspector-empty" x-show="activeView === 'runs' && selectedRunId && !inspector.documentId">
     <p class="empty-note">Select a document to inspect.</p>
   </aside>
 

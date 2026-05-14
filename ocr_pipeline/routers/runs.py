@@ -1,23 +1,42 @@
 import asyncio
+import hashlib
 import json
 from io import BytesIO
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Path as PathParam, Query, Request
-from fastapi.responses import FileResponse, PlainTextResponse, Response, StreamingResponse
+from fastapi.responses import (
+    FileResponse,
+    PlainTextResponse,
+    Response,
+    StreamingResponse,
+)
 
 from ocr_pipeline.config import settings
 from ocr_pipeline.models.schemas import (
-    HFPublishRequest, HFPublishResponse, PageSummary, RunCreateRequest,
-    RunCreateResponse, RunDetail, RunDocumentDetail, RunDocumentSummary,
-    RunSummary, StagedDocumentInfo,
+    HFPublishRequest,
+    HFPublishResponse,
+    PageSummary,
+    RunCreateRequest,
+    RunCreateResponse,
+    RunDetail,
+    RunDocumentDetail,
+    RunDocumentSummary,
+    RunSummary,
+    StagedDocumentInfo,
 )
-from ocr_pipeline.services.auth_session import is_oauth_enabled, session_token, session_user
+from ocr_pipeline.services.auth_session import (
+    is_oauth_enabled,
+    session_token,
+    session_user,
+)
 from ocr_pipeline.services.db import get_db
 from ocr_pipeline.services.hf_publisher import publish_run_to_hf
+from ocr_pipeline.services.ocr_pair_exporter import OCRPairExporter
 from ocr_pipeline.services.pdf_renderer import PDFRenderer
 from ocr_pipeline.services.run_orchestrator import get_orchestrator
 from ocr_pipeline.services.startup import model_readiness
+from ocr_pipeline.services.text_bundle_exporter import TextBundleExporter
 
 
 router = APIRouter()
@@ -33,9 +52,12 @@ ARTIFACT_FIELDS = {
     "source": ("artifact_source_pdf", "application/pdf"),
 }
 TEXT_MODES = {
-    "raw": "artifact_raw_txt", "raw_txt": "artifact_raw_txt",
-    "txt": "artifact_clean_txt", "clean": "artifact_clean_txt",
-    "md": "artifact_markdown", "markdown": "artifact_markdown",
+    "raw": "artifact_raw_txt",
+    "raw_txt": "artifact_raw_txt",
+    "txt": "artifact_clean_txt",
+    "clean": "artifact_clean_txt",
+    "md": "artifact_markdown",
+    "markdown": "artifact_markdown",
 }
 
 
@@ -103,10 +125,12 @@ def _doc_summary(row: dict) -> RunDocumentSummary:
 def _page_summary(row: dict) -> PageSummary:
     def _bool(v):
         return bool(v) if v is not None else None
+
     return PageSummary(
         page_num=row["page_num"],
         status=row["status"],
         validation_issues=_parse_str_list(row.get("validation_issues")),
+        quality_flags=_parse_str_list(row.get("quality_flags")),
         script_direction=row.get("script_direction"),
         primary_script=row.get("primary_script"),
         detected_languages=_parse_str_list(row.get("detected_languages")),
@@ -149,7 +173,9 @@ def _existing_path(rd: dict, field: str) -> Path:
 @router.post("/api/runs", response_model=RunCreateResponse)
 async def create_run(request: RunCreateRequest):
     if not model_readiness.ready:
-        raise HTTPException(status_code=503, detail=f"Model server not ready: {model_readiness.status}")
+        raise HTTPException(
+            status_code=503, detail=f"Model server not ready: {model_readiness.status}"
+        )
     if not request.file_paths:
         raise HTTPException(status_code=400, detail="file_paths must not be empty")
 
@@ -164,7 +190,40 @@ async def create_run(request: RunCreateRequest):
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 
-    orchestrator.start(result, strip_refs=request.strip_refs, export_parquet=request.export_parquet)
+    orchestrator.start(
+        result, strip_refs=request.strip_refs, export_parquet=request.export_parquet
+    )
+
+    return RunCreateResponse(
+        run_id=result.run_id,
+        status="queued",
+        documents_total=len(result.documents),
+        pages_total_estimate=result.pages_total_estimate,
+        documents=[
+            StagedDocumentInfo(
+                document_id=d.document_id,
+                filename=d.filename,
+                file_sha256=d.file_sha256,
+                deduped=d.deduped,
+                estimated_pages=d.estimated_pages,
+            )
+            for d in result.documents
+        ],
+    )
+
+
+@router.post("/api/runs/{run_id}/retry", response_model=RunCreateResponse)
+async def retry_run(run_id: str = ID):
+    if not model_readiness.ready:
+        raise HTTPException(
+            status_code=503, detail=f"Model server not ready: {model_readiness.status}"
+        )
+    try:
+        result = await get_orchestrator().retry_incomplete_run(run_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Run not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
 
     return RunCreateResponse(
         run_id=result.run_id,
@@ -193,29 +252,37 @@ async def list_runs(limit: int = Query(50, ge=1, le=500)):
 async def get_run(run_id: str = ID):
     run = await _require_run(run_id)
     documents = await get_db().list_run_documents(run_id)
-    return RunDetail(**_run_summary(run).model_dump(),
-                     documents=[_doc_summary(d) for d in documents])
+    return RunDetail(
+        **_run_summary(run).model_dump(), documents=[_doc_summary(d) for d in documents]
+    )
 
 
 @router.delete("/api/runs/{run_id}")
 async def delete_run(run_id: str = ID):
     run = await _require_run(run_id)
     if run["status"] == "processing":
-        raise HTTPException(status_code=409, detail="Cannot delete a run that is still processing")
+        raise HTTPException(
+            status_code=409, detail="Cannot delete a run that is still processing"
+        )
     await get_db().delete_run(run_id)
     return {"deleted": run_id}
 
 
-@router.get("/api/runs/{run_id}/documents/{document_id}", response_model=RunDocumentDetail)
+@router.get(
+    "/api/runs/{run_id}/documents/{document_id}", response_model=RunDocumentDetail
+)
 async def get_run_document(run_id: str = ID, document_id: str = ID):
     rd = await _require_doc(run_id, document_id)
     pages = await get_db().list_pages(run_id, document_id)
-    return RunDocumentDetail(**_doc_summary(rd).model_dump(),
-                             pages=[_page_summary(p) for p in pages])
+    return RunDocumentDetail(
+        **_doc_summary(rd).model_dump(), pages=[_page_summary(p) for p in pages]
+    )
 
 
 @router.get("/api/runs/{run_id}/documents/{document_id}/text")
-async def get_run_document_text(run_id: str = ID, document_id: str = ID, mode: str = "txt"):
+async def get_run_document_text(
+    run_id: str = ID, document_id: str = ID, mode: str = "txt"
+):
     field = TEXT_MODES.get(mode)
     if not field:
         raise HTTPException(status_code=400, detail="Unsupported mode")
@@ -267,7 +334,138 @@ async def download_dataset_bundle(run_id: str = ID):
     bundle = run.get("dataset_bundle")
     if not bundle or not Path(bundle).exists():
         raise HTTPException(status_code=404, detail="Dataset bundle not available")
-    return FileResponse(bundle, media_type="application/zip", filename=Path(bundle).name)
+    return FileResponse(
+        bundle, media_type="application/zip", filename=Path(bundle).name
+    )
+
+
+@router.get("/api/runs/{run_id}/ocr-pairs/download")
+async def download_ocr_pairs(
+    run_id: str = ID,
+    dpi: int = Query(160, ge=50, le=400),
+    text_mode: str = Query("clean", pattern="^(clean|raw)$"),
+    document_ids: str | None = Query(None),
+):
+    db = get_db()
+    run = await _require_run(run_id)
+    if run["status"] != "completed":
+        raise HTTPException(status_code=409, detail="Run is not yet completed")
+
+    documents = await db.list_run_documents(run_id)
+    selected_ids = {
+        part.strip() for part in (document_ids or "").split(",") if part.strip()
+    } or None
+    if selected_ids:
+        available_ids = {doc["document_id"] for doc in documents}
+        missing = selected_ids - available_ids
+        if missing:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Document not found in run: {sorted(missing)[0]}",
+            )
+    pages_by_document = {
+        doc["document_id"]: await db.list_pages(run_id, doc["document_id"])
+        for doc in documents
+    }
+    catalog_by_document = {
+        doc["document_id"]: await db.get_document(doc["document_id"]) or {}
+        for doc in documents
+    }
+    scope = "all"
+    if selected_ids:
+        scope = hashlib.sha256(
+            ",".join(sorted(selected_ids)).encode("utf-8")
+        ).hexdigest()[:12]
+    export_dir = (
+        settings.runs_dir / run_id / "dataset" / f"ocr_pairs_{text_mode}_{dpi}_{scope}"
+    )
+    cached_bundle = export_dir.with_suffix(".zip")
+    if cached_bundle.exists():
+        return FileResponse(
+            cached_bundle,
+            media_type="application/zip",
+            filename=f"{run_id}-ocr-pairs.zip",
+        )
+    exporter = OCRPairExporter(export_dir)
+    result = await asyncio.to_thread(
+        exporter.export_run,
+        run=run,
+        documents=documents,
+        pages_by_document=pages_by_document,
+        catalog_by_document=catalog_by_document,
+        document_ids=selected_ids,
+        dpi=dpi,
+        text_mode=text_mode,
+    )
+    if result.pages_count == 0:
+        raise HTTPException(status_code=404, detail="No completed OCR pages to export")
+    return FileResponse(
+        result.bundle,
+        media_type="application/zip",
+        filename=f"{run_id}-ocr-pairs.zip",
+    )
+
+
+@router.get("/api/runs/{run_id}/text-bundle/download")
+async def download_text_bundle(
+    run_id: str = ID,
+    document_ids: str | None = Query(None),
+):
+    db = get_db()
+    run = await _require_run(run_id)
+    if run["status"] != "completed":
+        raise HTTPException(status_code=409, detail="Run is not yet completed")
+
+    documents = await db.list_run_documents(run_id)
+    selected_ids = {
+        part.strip() for part in (document_ids or "").split(",") if part.strip()
+    } or None
+    if selected_ids:
+        available_ids = {doc["document_id"] for doc in documents}
+        missing = selected_ids - available_ids
+        if missing:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Document not found in run: {sorted(missing)[0]}",
+            )
+
+    pages_by_document = {
+        doc["document_id"]: await db.list_pages(run_id, doc["document_id"])
+        for doc in documents
+    }
+    catalog_by_document = {
+        doc["document_id"]: await db.get_document(doc["document_id"]) or {}
+        for doc in documents
+    }
+    scope = "all"
+    if selected_ids:
+        scope = hashlib.sha256(
+            ",".join(sorted(selected_ids)).encode("utf-8")
+        ).hexdigest()[:12]
+    export_dir = settings.runs_dir / run_id / "dataset" / f"text_bundle_{scope}"
+    cached_bundle = export_dir.with_suffix(".zip")
+    if cached_bundle.exists():
+        return FileResponse(
+            cached_bundle,
+            media_type="application/zip",
+            filename=f"{run_id}-text-bundle.zip",
+        )
+
+    result = await asyncio.to_thread(
+        TextBundleExporter(export_dir).export_run,
+        run=run,
+        documents=documents,
+        pages_by_document=pages_by_document,
+        catalog_by_document=catalog_by_document,
+        document_ids=selected_ids,
+    )
+    if result.pages_count == 0:
+        raise HTTPException(status_code=404, detail="No completed text to export")
+    return FileResponse(
+        result.bundle,
+        media_type="application/zip",
+        filename=f"{run_id}-text-bundle.zip",
+    )
 
 
 @router.get("/api/runs/{run_id}/stream")
@@ -276,14 +474,18 @@ async def stream_run(run_id: str = ID, after_event_id: int = 0):
     orchestrator = get_orchestrator()
 
     async def gen():
-        async for event in orchestrator.subscribe(run_id, after_event_id=after_event_id):
+        async for event in orchestrator.subscribe(
+            run_id, after_event_id=after_event_id
+        ):
             yield f"data: {json.dumps(event, ensure_ascii=False, default=str)}\n\n"
 
     return StreamingResponse(gen(), media_type="text/event-stream")
 
 
 @router.post("/api/runs/{run_id}/publish/hf", response_model=HFPublishResponse)
-async def publish_to_hf(payload: HFPublishRequest, http_request: Request, run_id: str = ID):
+async def publish_to_hf(
+    payload: HFPublishRequest, http_request: Request, run_id: str = ID
+):
     db = get_db()
     run = await _require_run(run_id)
     if run["status"] != "completed":
@@ -293,7 +495,9 @@ async def publish_to_hf(payload: HFPublishRequest, http_request: Request, run_id
     #   1. signed-in user's HF OAuth token (preferred — tied to a real user)
     #   2. token explicitly passed in the request body (paste-token mode)
     #   3. HF_TOKEN env var (single-user / dev fallback, resolved inside publisher)
-    user = session_user(http_request.session) if hasattr(http_request, "session") else None
+    user = (
+        session_user(http_request.session) if hasattr(http_request, "session") else None
+    )
     sess_tok = session_token(http_request.session) if user else None
 
     # If OAuth is enabled and the user is signed in, ignore the body token —
@@ -302,7 +506,9 @@ async def publish_to_hf(payload: HFPublishRequest, http_request: Request, run_id
     # publishes entirely so the panel acts as a true gate.
     if is_oauth_enabled():
         if not sess_tok:
-            raise HTTPException(status_code=401, detail="Sign in with HuggingFace to publish.")
+            raise HTTPException(
+                status_code=401, detail="Sign in with HuggingFace to publish."
+            )
         token = sess_tok
     else:
         token = payload.token

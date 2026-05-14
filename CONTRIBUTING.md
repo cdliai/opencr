@@ -19,8 +19,8 @@ expected text is one of the highest-leverage contributions.
 PaddleOCR / Marker on a Turkish corpus and post the table — even 
 informal numbers are useful.
 
-- **Model-backend ports.** MLX, llama.cpp, ONNX, or any other runtime 
-that improves throughput on a target platform.
+- **Deployment recipes.** vLLM, hosted GPU endpoints, and reproducible
+benchmark environments that improve throughput or quality.
 
 - **Translations.** README and dataset cards in additional languages.
 
@@ -33,7 +33,7 @@ make install
 make test
 ```
 
-`make run` starts a local dev server on http://localhost:39672 with the `local` model backend (no GPU needed; ~5–30 s/page on M-series Macs).
+`make run` starts a local dev server on http://localhost:39672 and points it at `MODEL_SERVER_URL` (default: `http://localhost:39671`). Start the bundled GPU stack with `docker compose up -d`, or provide another OpenAI-compatible GPU endpoint.
 
 ## Code style
 

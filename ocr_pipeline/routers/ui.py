@@ -1,11 +1,15 @@
 """Static-friendly endpoints for input file management. Output/dataset listing
 moved to /api/runs."""
+
+import hashlib
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, UploadFile
 
 from ocr_pipeline.config import settings
 from ocr_pipeline.models.schemas import FileInfo
+from ocr_pipeline.services.db import get_db
+from ocr_pipeline.services.document_catalog import catalog_pdf
 
 
 router = APIRouter()
@@ -22,11 +26,18 @@ async def upload_pdf(file: UploadFile):
         raise HTTPException(status_code=400, detail="Invalid filename")
 
     settings.input_dir.mkdir(parents=True, exist_ok=True)
-    dest = settings.input_dir / safe_name
     content = await file.read()
+    digest = hashlib.sha256(content).hexdigest()
+    dest = settings.input_dir / f"{digest[:16]}__{safe_name}"
     dest.write_bytes(content)
+    await catalog_pdf(get_db(), dest, filename=safe_name)
 
-    return {"filename": safe_name, "size": len(content), "path": str(dest)}
+    return {
+        "filename": safe_name,
+        "stored_filename": dest.name,
+        "size": len(content),
+        "path": str(dest),
+    }
 
 
 @router.get("/api/files/input", response_model=list[FileInfo])
@@ -36,14 +47,20 @@ async def list_input_files():
     if not input_dir.exists():
         return []
 
+    documents_by_path = {
+        doc["source_path"]: doc for doc in await get_db().list_documents(limit=1000)
+    }
     files = []
     for p in sorted(input_dir.iterdir()):
         if p.is_file() and p.suffix.lower() == ".pdf":
             stat = p.stat()
-            files.append(FileInfo(
-                name=p.name,
-                size=stat.st_size,
-                modified=stat.st_mtime,
-                path=str(p),
-            ))
+            document = documents_by_path.get(str(p))
+            files.append(
+                FileInfo(
+                    name=document["filename"] if document else p.name,
+                    size=stat.st_size,
+                    modified=stat.st_mtime,
+                    path=str(p),
+                )
+            )
     return files

@@ -20,4 +20,4 @@ ENV PYTHONPATH=/app
 
 EXPOSE 39672
 
-CMD ["uvicorn", "ocr_pipeline.main:app", "--host", "0.0.0.0", "--port", "39672"]
+CMD ["uvicorn", "ocr_pipeline.main:app", "--host", "0.0.0.0", "--port", "39672", "--no-access-log"]

@@ -44,6 +44,38 @@ const API = {
     return res.json();
   },
 
+  async listDocuments(limit = 500) {
+    const res = await fetch(`/api/documents?limit=${limit}`);
+    if (!res.ok) throw new Error('Failed to list documents');
+    return res.json();
+  },
+
+  async updateDocument(documentId, payload) {
+    const res = await fetch(`/api/documents/${encodeURIComponent(documentId)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.detail || 'Failed to update document');
+    }
+    return res.json();
+  },
+
+  async bulkUpdateDocuments(payload) {
+    const res = await fetch('/api/documents/bulk', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.detail || 'Failed to update documents');
+    }
+    return res.json();
+  },
+
   async createRun(filePaths, { name, stripRefs = false, exportParquet = true } = {}) {
     const res = await fetch('/api/runs', {
       method: 'POST',
@@ -83,6 +115,15 @@ const API = {
     return res.json();
   },
 
+  async retryRun(runId) {
+    const res = await fetch(`/api/runs/${encodeURIComponent(runId)}/retry`, { method: 'POST' });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.detail || 'Failed to retry run');
+    }
+    return res.json();
+  },
+
   async getRunDocument(runId, documentId) {
     const res = await fetch(
       `/api/runs/${encodeURIComponent(runId)}/documents/${encodeURIComponent(documentId)}`
@@ -109,6 +150,19 @@ const API = {
 
   datasetDownloadUrl(runId) {
     return `/api/runs/${encodeURIComponent(runId)}/dataset/download`;
+  },
+
+  ocrPairsDownloadUrl(runId, { dpi = 160, textMode = 'clean', documentIds = [] } = {}) {
+    const params = new URLSearchParams({ dpi: String(dpi), text_mode: textMode });
+    if (documentIds.length > 0) params.set('document_ids', documentIds.join(','));
+    return `/api/runs/${encodeURIComponent(runId)}/ocr-pairs/download?${params.toString()}`;
+  },
+
+  textBundleDownloadUrl(runId, { documentIds = [] } = {}) {
+    const params = new URLSearchParams();
+    if (documentIds.length > 0) params.set('document_ids', documentIds.join(','));
+    const suffix = params.toString() ? `?${params.toString()}` : '';
+    return `/api/runs/${encodeURIComponent(runId)}/text-bundle/download${suffix}`;
   },
 
   async publishToHF(runId, payload) {

@@ -33,7 +33,7 @@ RETRY_STRATEGIES: tuple[dict, ...] = (
 PAGE_DB_FIELDS = (
     "validation_issues", "script_direction", "primary_script", "detected_languages",
     "token_count_cl100k", "text_length_chars", "text_length_words",
-    "extraction_mode", "extraction_attempt", "dpi_used",
+    "extraction_mode", "extraction_attempt", "dpi_used", "quality_flags",
     "has_embedded_text", "is_image_only",
 )
 
@@ -188,9 +188,10 @@ class BatchProcessor:
         run_id: str,
         document_id: str,
         file_sha256: str,
+        filename: str | None = None,
         artifact_paths: ArtifactPaths,
     ) -> DocumentMetadata:
-        filename = pdf_path.name
+        filename = filename or pdf_path.name
         file_size = (await asyncio.to_thread(pdf_path.stat)).st_size
         started_at = datetime.now(timezone.utc).isoformat()
 

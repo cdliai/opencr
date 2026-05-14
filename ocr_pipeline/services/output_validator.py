@@ -25,15 +25,16 @@ class OutputValidator:
     """
 
     # --- Thresholds — tune based on your corpus --- #
-    MAX_REPETITION_RATIO = 0.35                      # If >35% of lines are duplicates -> WARN
-    MAX_REPETITION_RATIO_FAIL = 0.60                 # If >60% -> FAIL
-    MIN_UNIQUE_CHARS = 10                            # Minimum unique characters for non-empty
-    MAX_SINGLE_CHAR_RATIO = 0.50                     # If >50% of text is one character -> FAIL
-    MIN_TEXT_LENGTH = 20                             # Below this = probably blank page
-    MAX_CONSECUTIVE_DUPES = 5                        # 5+ identical consecutive lines = WARN
+    MAX_REPETITION_RATIO = 0.35  # If >35% of lines are duplicates -> WARN
+    MAX_REPETITION_RATIO_FAIL = 0.60  # If >60% -> FAIL
+    MIN_UNIQUE_CHARS = 10  # Minimum unique characters for non-empty
+    MAX_SINGLE_CHAR_RATIO = 0.50  # If >50% of text is one character -> FAIL
+    MIN_TEXT_LENGTH = 20  # Below this = probably blank page
+    MAX_CONSECUTIVE_DUPES = 5  # 5+ identical consecutive lines = WARN
 
     def validate(self, text: str, page_num: int) -> ValidationResult:
         issues: list[str] = []
+        quality_flags: list[str] = []
         metrics: dict = {}
 
         # Check 1: Empty / near-empty output
@@ -46,7 +47,7 @@ class OutputValidator:
             )
 
         # Check 2: Line-level repetition
-        lines = [l.strip() for l in stripped.split("\n") if l.strip()]
+        lines = [line.strip() for line in stripped.split("\n") if line.strip()]
         single_char_ratio = 0.0
 
         if lines:
@@ -110,6 +111,27 @@ class OutputValidator:
                 issues.append(f"Page {page_num}: model artifact detected")
                 break
 
+        # Check 6: Corpus quality signals. These are usually still usable OCR,
+        # but researchers need them visible before treating text as ground truth.
+        hyphen_breaks = re.findall(
+            r"(?iu)[^\W\d_]{2,}-\s*\n\s*[^\W\d_]{2,}", stripped
+        )
+        inline_hyphen_breaks = re.findall(
+            r"(?iu)[^\W\d_]{2,}-\s{1,3}[^\W\d_]{2,}", stripped
+        )
+        hyphen_break_count = len(hyphen_breaks) + len(inline_hyphen_breaks)
+        if hyphen_break_count:
+            quality_flags.append("line_hyphenation")
+            metrics["line_hyphenation_count"] = hyphen_break_count
+            issues.append(
+                f"Page {page_num}: line-break hyphenation remains "
+                f"({hyphen_break_count} segment(s))"
+            )
+
+        if re.search(r"</?(center|div|span|html|body|table|tr|td|p|br|h[1-6])\b[^>]*>", stripped, re.I):
+            quality_flags.append("markup_leak")
+            issues.append(f"Page {page_num}: markup tag leaked into clean text")
+
         # Determine overall status
         if any("extreme repetition" in i or "model artifact" in i for i in issues):
             status = ValidationStatus.FAIL
@@ -120,5 +142,6 @@ class OutputValidator:
         else:
             status = ValidationStatus.PASS
 
+        metrics["quality_flags"] = quality_flags
         metrics["text_length"] = len(stripped)
         return ValidationResult(status=status, issues=issues, metrics=metrics)

@@ -3,7 +3,7 @@ from pathlib import Path
 import fitz
 import tiktoken
 
-from ocr_pipeline.models.metadata import PageMetadata, DocumentMetadata
+from ocr_pipeline.models.metadata import PageMetadata
 from ocr_pipeline.services.script_detector import ScriptAnalysis
 from ocr_pipeline.services.output_validator import ValidationResult
 from ocr_pipeline.services.page_analyzer import PageProfile
@@ -12,7 +12,7 @@ from ocr_pipeline.services.page_analyzer import PageProfile
 class MetadataCollector:
     """Builds metadata during extraction."""
 
-    def __init__(self, model_name: str = "deepseek-ai/DeepSeek-OCR"):
+    def __init__(self, model_name: str = "deepseek-ai/DeepSeek-OCR-2"):
         self.model_name = model_name
         try:
             self._tokenizer = tiktoken.get_encoding("cl100k_base")
@@ -23,7 +23,7 @@ class MetadataCollector:
         """Count tokens using tiktoken cl100k_base encoding."""
         if self._tokenizer:
             return len(self._tokenizer.encode(text))
-        return int(len(text.split()) * 1.3)# Fallback: rough estimate
+        return int(len(text.split()) * 1.3)  # Fallback: rough estimate
 
     def build_page_metadata(
         self,
@@ -38,7 +38,7 @@ class MetadataCollector:
         page_profile: PageProfile,
     ) -> PageMetadata:
         words = text.split()
-        lines = [l for l in text.split("\n") if l.strip()]
+        lines = [line for line in text.split("\n") if line.strip()]
         token_count = self.count_tokens(text)
 
         return PageMetadata(
@@ -64,11 +64,13 @@ class MetadataCollector:
             validation_issues=validation_result.issues,
             repetition_ratio=validation_result.metrics.get("repetition_ratio", 0),
             has_embedded_text=page_profile.has_embedded_text,
-            is_image_only=not page_profile.has_embedded_text and page_profile.has_images,
+            is_image_only=not page_profile.has_embedded_text
+            and page_profile.has_images,
             page_width=page_profile.width,
             page_height=page_profile.height,
             image_count=page_profile.image_count,
             estimated_complexity=page_profile.estimated_complexity,
+            quality_flags=validation_result.metrics.get("quality_flags", []),
         )
 
     def extract_pdf_metadata(self, pdf_path: Path) -> dict:

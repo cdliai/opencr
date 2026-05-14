@@ -10,6 +10,44 @@ import aiosqlite
 logger = logging.getLogger("ocr_pipeline.db")
 
 
+DOCUMENT_METADATA_FIELDS = {
+    "display_title",
+    "group_path",
+    "author",
+    "work",
+    "book",
+    "document_date_label",
+    "document_date_precision",
+    "language",
+    "script",
+    "license",
+    "source_citation",
+    "notes",
+    "tags_json",
+}
+
+DOCUMENT_METADATA_COLUMNS = {
+    "display_title": "TEXT",
+    "group_path": "TEXT",
+    "author": "TEXT",
+    "work": "TEXT",
+    "book": "TEXT",
+    "document_date_label": "TEXT",
+    "document_date_precision": "TEXT",
+    "language": "TEXT",
+    "script": "TEXT",
+    "license": "TEXT",
+    "source_citation": "TEXT",
+    "notes": "TEXT",
+    "tags_json": "TEXT",
+    "catalog_updated_at": "TEXT",
+}
+
+PAGE_METADATA_COLUMNS = {
+    "quality_flags": "TEXT",
+}
+
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
     id TEXT PRIMARY KEY,
@@ -43,6 +81,20 @@ CREATE TABLE IF NOT EXISTS documents (
     pdf_author TEXT,
     pdf_creation_date TEXT,
     pdf_producer TEXT,
+    display_title TEXT,
+    group_path TEXT,
+    author TEXT,
+    work TEXT,
+    book TEXT,
+    document_date_label TEXT,
+    document_date_precision TEXT,
+    language TEXT,
+    script TEXT,
+    license TEXT,
+    source_citation TEXT,
+    notes TEXT,
+    tags_json TEXT,
+    catalog_updated_at TEXT,
     first_seen_at TEXT NOT NULL,
     last_seen_at TEXT NOT NULL
 );
@@ -90,6 +142,7 @@ CREATE TABLE IF NOT EXISTS pages (
     extraction_mode TEXT,
     extraction_attempt INTEGER,
     dpi_used INTEGER,
+    quality_flags TEXT,
     has_embedded_text INTEGER,
     is_image_only INTEGER,
     PRIMARY KEY (run_id, document_id, page_num),
@@ -139,6 +192,7 @@ class Database:
         await self._conn.execute("PRAGMA journal_mode=WAL;")
         await self._conn.execute("PRAGMA foreign_keys=ON;")
         await self._conn.executescript(SCHEMA)
+        await self._migrate()
         await self._conn.commit()
         logger.info("Database ready at %s", self.db_path)
 
@@ -152,6 +206,20 @@ class Database:
         if self._conn is None:
             raise RuntimeError("Database not connected; call connect() first.")
         return self._conn
+
+    async def _migrate(self) -> None:
+        """Apply additive migrations for existing local SQLite catalogs."""
+        await self._ensure_columns("documents", DOCUMENT_METADATA_COLUMNS)
+        await self._ensure_columns("pages", PAGE_METADATA_COLUMNS)
+
+    async def _ensure_columns(self, table: str, columns: dict[str, str]) -> None:
+        async with self.conn.execute(f"PRAGMA table_info({table})") as cur:
+            existing = {row["name"] for row in await cur.fetchall()}
+        for name, column_type in columns.items():
+            if name not in existing:
+                await self.conn.execute(
+                    f"ALTER TABLE {table} ADD COLUMN {name} {column_type}"
+                )
 
     @asynccontextmanager
     async def cursor(self) -> AsyncIterator[aiosqlite.Cursor]:
@@ -209,7 +277,9 @@ class Database:
         await self.conn.commit()
 
     async def get_run(self, run_id: str) -> Optional[dict[str, Any]]:
-        async with self.conn.execute("SELECT * FROM runs WHERE id = ?", (run_id,)) as cur:
+        async with self.conn.execute(
+            "SELECT * FROM runs WHERE id = ?", (run_id,)
+        ) as cur:
             row = await cur.fetchone()
             return _row_to_dict(row)
 
@@ -227,6 +297,12 @@ class Database:
     async def fail_orphan_runs(self) -> int:
         """Mark any run still in `processing`/`queued` as failed. Called once
         on startup so a crashed process does not leave runs visibly live."""
+        async with self.conn.execute(
+            "SELECT id FROM runs WHERE status IN ('queued', 'processing')"
+        ) as cur:
+            run_ids = [row["id"] for row in await cur.fetchall()]
+        for run_id in run_ids:
+            await self.fail_incomplete_run_documents(run_id)
         cur = await self.conn.execute(
             """
             UPDATE runs
@@ -235,6 +311,35 @@ class Database:
                    error = COALESCE(error, 'Process exited before run finished'),
                    completed_at = COALESCE(completed_at, ?)
              WHERE status IN ('queued', 'processing')
+            """,
+            (_now(),),
+        )
+        await self.conn.commit()
+        affected = cur.rowcount or 0
+        await cur.close()
+        return affected
+
+    async def fail_incomplete_run_documents(self, run_id: str) -> None:
+        await self.conn.execute(
+            """
+            UPDATE run_documents
+               SET status = 'failed',
+                   completed_at = COALESCE(completed_at, ?)
+             WHERE run_id = ?
+               AND status != 'completed'
+            """,
+            (_now(), run_id),
+        )
+        await self.conn.commit()
+
+    async def fail_documents_for_failed_runs(self) -> int:
+        cur = await self.conn.execute(
+            """
+            UPDATE run_documents
+               SET status = 'failed',
+                   completed_at = COALESCE(completed_at, ?)
+             WHERE status != 'completed'
+               AND run_id IN (SELECT id FROM runs WHERE status = 'failed')
             """,
             (_now(),),
         )
@@ -269,6 +374,8 @@ class Database:
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 filename = excluded.filename,
+                source_path = excluded.source_path,
+                file_size_bytes = excluded.file_size_bytes,
                 last_seen_at = excluded.last_seen_at,
                 total_pages = COALESCE(excluded.total_pages, documents.total_pages),
                 pdf_title = COALESCE(excluded.pdf_title, documents.pdf_title),
@@ -300,6 +407,122 @@ class Database:
         ) as cur:
             return _row_to_dict(await cur.fetchone())
 
+    async def list_documents(self, limit: int = 500) -> list[dict[str, Any]]:
+        async with self.conn.execute(
+            """
+            SELECT d.id, d.filename, d.source_path, d.file_sha256, d.file_size_bytes,
+                   d.total_pages, d.pdf_title, d.pdf_author, d.pdf_creation_date, d.pdf_producer,
+                   d.group_path, d.author, d.work, d.book, d.document_date_label, d.document_date_precision,
+                   d.language, d.script, d.license, d.source_citation, d.notes, d.tags_json,
+                   d.catalog_updated_at, d.first_seen_at, d.last_seen_at,
+                   COALESCE(NULLIF(d.display_title, ''), NULLIF(d.pdf_title, ''), d.filename)
+                       AS display_title,
+                   CASE
+                     WHEN COALESCE(d.author, '') != ''
+                      AND COALESCE(d.work, '') != ''
+                      AND COALESCE(d.document_date_label, '') != ''
+                      AND COALESCE(d.document_date_precision, '') != ''
+                      AND COALESCE(d.language, '') != ''
+                      AND COALESCE(d.script, '') != ''
+                      AND COALESCE(d.license, '') != ''
+                     THEN 1 ELSE 0
+                   END AS metadata_complete,
+                   (
+                     SELECT r.id
+                     FROM run_documents rd
+                     JOIN runs r ON r.id = rd.run_id
+                     WHERE rd.document_id = d.id
+                     ORDER BY r.created_at DESC
+                     LIMIT 1
+                   ) AS latest_run_id,
+                   (
+                     SELECT r.status
+                     FROM run_documents rd
+                     JOIN runs r ON r.id = rd.run_id
+                     WHERE rd.document_id = d.id
+                     ORDER BY r.created_at DESC
+                     LIMIT 1
+                   ) AS latest_run_status
+            FROM documents d
+            ORDER BY d.last_seen_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ) as cur:
+            rows = await cur.fetchall()
+            return [_row_to_dict(r) for r in rows]  # type: ignore[misc]
+
+    async def update_document_metadata(
+        self, document_id: str, **fields: Any
+    ) -> dict[str, Any]:
+        clean = {k: v for k, v in fields.items() if k in DOCUMENT_METADATA_FIELDS}
+        if clean:
+            clean["catalog_updated_at"] = _now()
+            cols = ", ".join(f"{k} = ?" for k in clean)
+            values = [*clean.values(), document_id]
+            cur = await self.conn.execute(
+                f"UPDATE documents SET {cols} WHERE id = ?",
+                values,
+            )
+            await self.conn.commit()
+            affected = cur.rowcount or 0
+            await cur.close()
+            if not affected:
+                raise KeyError(document_id)
+
+        doc = await self.get_document(document_id)
+        if not doc:
+            raise KeyError(document_id)
+        return doc
+
+    async def update_documents_metadata(
+        self, document_ids: list[str], **fields: Any
+    ) -> list[dict[str, Any]]:
+        if not document_ids:
+            return []
+        clean = {k: v for k, v in fields.items() if k in DOCUMENT_METADATA_FIELDS}
+        placeholders = ", ".join("?" for _ in document_ids)
+        async with self.conn.execute(
+            f"SELECT id FROM documents WHERE id IN ({placeholders})",
+            document_ids,
+        ) as cur:
+            existing = {row["id"] for row in await cur.fetchall()}
+        missing = [
+            document_id for document_id in document_ids if document_id not in existing
+        ]
+        if missing:
+            raise KeyError(missing[0])
+        if clean:
+            clean["catalog_updated_at"] = _now()
+            cols = ", ".join(f"{k} = ?" for k in clean)
+            values = [*clean.values()]
+            for document_id in document_ids:
+                await self.conn.execute(
+                    f"UPDATE documents SET {cols} WHERE id = ?",
+                    [*values, document_id],
+                )
+            await self.conn.commit()
+        docs = []
+        for document_id in document_ids:
+            doc = await self.get_document(document_id)
+            if doc:
+                docs.append(doc)
+        return docs
+
+    async def list_document_runs(self, document_id: str) -> list[dict[str, Any]]:
+        async with self.conn.execute(
+            """
+            SELECT r.*, rd.status AS document_status, rd.pages_pass, rd.pages_warn, rd.pages_fail
+            FROM run_documents rd
+            JOIN runs r ON r.id = rd.run_id
+            WHERE rd.document_id = ?
+            ORDER BY r.created_at DESC
+            """,
+            (document_id,),
+        ) as cur:
+            rows = await cur.fetchall()
+            return [_row_to_dict(r) for r in rows]  # type: ignore[misc]
+
     async def get_document_by_sha(self, file_sha256: str) -> Optional[dict[str, Any]]:
         async with self.conn.execute(
             "SELECT * FROM documents WHERE file_sha256 = ?", (file_sha256,)
@@ -328,7 +551,9 @@ class Database:
         )
         await self.conn.commit()
 
-    async def update_run_document(self, run_id: str, document_id: str, **fields: Any) -> None:
+    async def update_run_document(
+        self, run_id: str, document_id: str, **fields: Any
+    ) -> None:
         if not fields:
             return
         cols = ", ".join(f"{k} = ?" for k in fields)
@@ -392,11 +617,12 @@ class Database:
             "extraction_mode": None,
             "extraction_attempt": None,
             "dpi_used": None,
+            "quality_flags": None,
             "has_embedded_text": None,
             "is_image_only": None,
         }
         defaults.update(fields)
-        for list_key in ("validation_issues", "detected_languages"):
+        for list_key in ("validation_issues", "detected_languages", "quality_flags"):
             v = defaults.get(list_key)
             if isinstance(v, list):
                 defaults[list_key] = json.dumps(v, ensure_ascii=False)
@@ -431,11 +657,18 @@ class Database:
 
     # ---------- events ----------
 
-    async def append_event(self, run_id: str, event_type: str, payload: dict[str, Any]) -> int:
+    async def append_event(
+        self, run_id: str, event_type: str, payload: dict[str, Any]
+    ) -> int:
         now = _now()
         cur = await self.conn.execute(
             "INSERT INTO run_events (run_id, event_type, payload, created_at) VALUES (?, ?, ?, ?)",
-            (run_id, event_type, json.dumps(payload, ensure_ascii=False, default=str), now),
+            (
+                run_id,
+                event_type,
+                json.dumps(payload, ensure_ascii=False, default=str),
+                now,
+            ),
         )
         await self.conn.commit()
         last_id = cur.lastrowid or 0

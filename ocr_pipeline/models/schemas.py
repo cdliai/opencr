@@ -1,17 +1,25 @@
 from pydantic import BaseModel, Field
-from typing import Any, Optional
+from typing import Optional
 
 
 class ExtractRequest(BaseModel):
     """Single PDF extraction request."""
+
     file_path: str = Field(description="Path to the PDF file")
-    output_dir: Optional[str] = Field(None, description="Output directory override (deprecated)")
-    strip_refs: bool = Field(False, description="Strip model reference blocks from output")
-    export_parquet: bool = Field(False, description="Export trainable Parquet artifacts")
+    output_dir: Optional[str] = Field(
+        None, description="Output directory override (deprecated)"
+    )
+    strip_refs: bool = Field(
+        False, description="Strip model reference blocks from output"
+    )
+    export_parquet: bool = Field(
+        False, description="Export trainable Parquet artifacts"
+    )
 
 
 class ExtractResponse(BaseModel):
     """Single PDF extraction response."""
+
     run_id: str
     document_id: str
     filename: str
@@ -30,10 +38,17 @@ class ExtractResponse(BaseModel):
 
 class JobRequest(BaseModel):
     """Batch extraction job request (compatibility wrapper around runs)."""
+
     file_paths: list[str] = Field(description="List of PDF file paths to process")
-    output_dir: Optional[str] = Field(None, description="Output directory override (deprecated)")
-    strip_refs: bool = Field(False, description="Strip model reference blocks (bounding boxes) from output")
-    export_parquet: bool = Field(False, description="Export a trainable Parquet bundle for the job")
+    output_dir: Optional[str] = Field(
+        None, description="Output directory override (deprecated)"
+    )
+    strip_refs: bool = Field(
+        False, description="Strip model reference blocks (bounding boxes) from output"
+    )
+    export_parquet: bool = Field(
+        False, description="Export a trainable Parquet bundle for the job"
+    )
     name: Optional[str] = Field(None, description="Optional human-friendly name")
 
 
@@ -66,6 +81,54 @@ class FileInfo(BaseModel):
     size: int
     modified: float
     path: str
+
+
+class DocumentUpdate(BaseModel):
+    display_title: Optional[str] = None
+    group_path: Optional[str] = None
+    author: Optional[str] = None
+    work: Optional[str] = None
+    book: Optional[str] = None
+    document_date_label: Optional[str] = None
+    document_date_precision: Optional[str] = None
+    language: Optional[str] = None
+    script: Optional[str] = None
+    license: Optional[str] = None
+    source_citation: Optional[str] = None
+    notes: Optional[str] = None
+    tags_json: Optional[str] = None
+
+
+class BulkDocumentUpdate(BaseModel):
+    document_ids: list[str]
+    group_path: Optional[str] = None
+
+
+class DocumentSummary(BaseModel):
+    id: str
+    filename: str
+    display_title: str
+    group_path: Optional[str] = None
+    source_path: str
+    file_sha256: str
+    file_size_bytes: int
+    total_pages: Optional[int] = None
+    pdf_title: Optional[str] = None
+    pdf_author: Optional[str] = None
+    author: Optional[str] = None
+    work: Optional[str] = None
+    book: Optional[str] = None
+    document_date_label: Optional[str] = None
+    document_date_precision: Optional[str] = None
+    language: Optional[str] = None
+    script: Optional[str] = None
+    license: Optional[str] = None
+    source_citation: Optional[str] = None
+    notes: Optional[str] = None
+    tags_json: Optional[str] = None
+    metadata_complete: bool = False
+    latest_run_id: Optional[str] = None
+    latest_run_status: Optional[str] = None
 
 
 class StagedDocumentInfo(BaseModel):
@@ -146,6 +209,7 @@ class PageSummary(BaseModel):
     page_num: int
     status: str
     validation_issues: list[str] = Field(default_factory=list)
+    quality_flags: list[str] = Field(default_factory=list)
     script_direction: Optional[str] = None
     primary_script: Optional[str] = None
     detected_languages: list[str] = Field(default_factory=list)
@@ -165,9 +229,13 @@ class RunDocumentDetail(RunDocumentSummary):
 
 
 class HFPublishRequest(BaseModel):
-    repo_id: str = Field(description="HuggingFace dataset repo (e.g. user/my-ocr-dataset)")
+    repo_id: str = Field(
+        description="HuggingFace dataset repo (e.g. user/my-ocr-dataset)"
+    )
     private: bool = False
-    token: Optional[str] = Field(None, description="HF token; if absent, uses HF_TOKEN env")
+    token: Optional[str] = Field(
+        None, description="HF token; if absent, uses HF_TOKEN env"
+    )
     commit_message: Optional[str] = None
 
 

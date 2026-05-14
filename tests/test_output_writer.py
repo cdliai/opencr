@@ -87,7 +87,7 @@ def build_document() -> DocumentMetadata:
         started_at="2026-01-01T00:00:00+00:00",
         completed_at="2026-01-01T00:00:01+00:00",
         pipeline_version="2.0.0",
-        model_used="deepseek-ai/DeepSeek-OCR",
+        model_used="deepseek-ai/DeepSeek-OCR-2",
         pages=[build_page(1), build_page(2)],
     )
 
